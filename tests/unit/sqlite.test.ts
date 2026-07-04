@@ -24,9 +24,10 @@ import {
   incrementPenaltyWeight,
 } from "../../src/storage/sqlite.js";
 
-// One temp DB path for this whole file - getDb() caches a single DatabaseSync
-// singleton keyed on the first path it's opened with, so every call in this
-// file must reuse this same path (see vitest.config.ts comment).
+// One temp DB path for most of this file, for consistency with prior runs -
+// getDb() now caches a DatabaseSync per resolved path (see "multiple db paths"
+// describe block below), so reusing one path throughout is a convention here,
+// not a requirement.
 let dbPath: string;
 let tmpDir: string;
 
@@ -214,6 +215,41 @@ describe("tool_invocations", () => {
 
     const sinceLate = queryInvocations(dbPath, { since: 15_000 });
     expect(sinceLate.every((r) => r.started_at >= 15_000)).toBe(true);
+  });
+});
+
+describe("multiple db paths in one process", () => {
+  it("keeps two distinct sqlite paths independently queryable", () => {
+    const dbPathA = join(tmpDir, "repo-a.db");
+    const dbPathB = join(tmpDir, "repo-b.db");
+
+    upsertSession(dbPathA, {
+      session_id: "repo-a-session",
+      adapter_id: "claude-code",
+      project_path: "/repo-a",
+      git_branch: null,
+      started_at: null,
+      ended_at: null,
+      slug: null,
+      raw_path: "/raw/a.jsonl",
+      intent: null,
+    });
+    upsertSession(dbPathB, {
+      session_id: "repo-b-session",
+      adapter_id: "claude-code",
+      project_path: "/repo-b",
+      git_branch: null,
+      started_at: null,
+      ended_at: null,
+      slug: null,
+      raw_path: "/raw/b.jsonl",
+      intent: null,
+    });
+
+    expect(getSession(dbPathA, "repo-a-session")?.project_path).toBe("/repo-a");
+    expect(getSession(dbPathA, "repo-b-session")).toBeUndefined();
+    expect(getSession(dbPathB, "repo-b-session")?.project_path).toBe("/repo-b");
+    expect(getSession(dbPathB, "repo-a-session")).toBeUndefined();
   });
 });
 
