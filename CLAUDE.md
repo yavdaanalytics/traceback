@@ -21,7 +21,7 @@ tool inputs (queries, patterns, refs) can come from LLM-generated arguments.
 
 ## Conventions
 - Business logic lives in its own `src/mcp/*.ts` module (e.g. `search.ts`, `lineage.ts`, `telemetry.ts`, `feedback.ts`); `src/mcp/index.ts` only wires `server.registerTool(...)` to those functions — no logic inline in the wiring file.
-- `src/storage/sqlite.ts`: typed row interfaces + hand-written prepared statements with `$named` params, plain exported `upsertX`/`getX` functions, `getDb(dbPath)` singleton.
+- `src/storage/sqlite.ts`: typed row interfaces + hand-written prepared statements with `$named` params, plain exported `upsertX`/`getX` functions, `getDb(dbPath)` caches one connection per resolved path (a `Map`, not a single singleton) so a process can hold multiple repos' DBs open at once — used by `traceback-dashboard` to aggregate telemetry across repos (`src/dashboard/registry.ts` tracks known repos in `~/.traceback/repos.json`).
 - ESM imports of local compiled output on Windows require the `file://` URL scheme (bare `c:/...` paths throw `ERR_UNSUPPORTED_ESM_URL_SCHEME`).
 
 ## Testing
@@ -32,7 +32,7 @@ Test runner: **Vitest** (`npm test` runs everything under `tests/`). Layout:
 - `tests/regression/` — pins behaviors a "helpful" refactor could silently invert: the penalty sign convention (add, never subtract), the `penalty_weight` migration, exact efficiency-report phrasing, and a source-scan guard (`security-invariants.test.ts`) that fails if any `src/**/*.ts` file calls `exec()`/`shell: true` or string-interpolates into an `execFileSync` argv element.
 - `tests/evals/` — scripted, deterministic (no LLM call) checks of the agent-facing contract: recall@1 on a golden query/session set, warm-start line-reduction % on a synthetic noisy repo, and that `submit_feedback`'s HITL usage-contract text is still present verbatim in `src/mcp/index.ts`.
 
-**Important — `node:sqlite`/LanceDB singleton caveat**: `getDb()` in `sqlite.ts` and `getConnection()` in `lancedb.ts` both cache their handle keyed on the *first* path/dir passed to them per process; a second call with a different path in the same process silently reuses the first connection. Each test file must therefore use exactly one SQLite path and one LanceDB dir for its own duration — this works today because Vitest's default pool runs each test file in an isolated worker/module registry. Don't multiplex sqlite/lancedb paths within a single test file.
+**Important — `node:sqlite`/LanceDB singleton caveat**: `getConnection()` in `lancedb.ts` still caches its handle keyed on the *first* dir passed to it per process; a second call with a different dir in the same process silently reuses the first connection. `getDb()` in `sqlite.ts` no longer has this limitation — it caches per resolved path in a `Map`, so multiple SQLite paths can be open at once in one process (this is what lets the dashboard aggregate across repos). LanceDB test files must still use exactly one dir for their own duration — this works today because Vitest's default pool runs each test file in an isolated worker/module registry. Don't multiplex LanceDB dirs within a single test file.
 
 Other checks:
 - `npm run bench` (`scripts/bench.mjs`, run after `npm run build`) — latency/throughput of `sqlite` writes/reads and LanceDB search at 1k/5k/10k-row scale. Not classic load testing (this is a single-user local stdio process, not a concurrent network service) — it answers "does this stay fast as history grows."

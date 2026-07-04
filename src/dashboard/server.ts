@@ -1,6 +1,8 @@
 import http from "node:http";
+import { existsSync } from "node:fs";
 import { parse } from "node:url";
-import { queryInvocations, getAllSessions } from "../storage/sqlite.js";
+import { queryInvocations, getAllSessions, type ToolInvocationRow, type SessionRow } from "../storage/sqlite.js";
+import { listRegisteredRepos } from "./registry.js";
 
 export function createDashboardServer(repoRoot: string, sqlitePath: string, dataDir: string) {
   const server = http.createServer(async (req, res) => {
@@ -20,7 +22,24 @@ export function createDashboardServer(repoRoot: string, sqlitePath: string, data
 
     try {
       if (pathname === "/api/telemetry") {
-        const rows = queryInvocations(sqlitePath, {});
+        const registered = listRegisteredRepos();
+        const allRepos = registered.some((r) => r.repoRoot === repoRoot)
+          ? registered
+          : [...registered, { repoRoot, sqlitePath }];
+        const repoFilter = typeof url.query.repo === "string" ? url.query.repo : undefined;
+        const repos = repoFilter ? allRepos.filter((r) => r.repoRoot === repoFilter) : allRepos;
+
+        const rows: (ToolInvocationRow & { repoRoot: string })[] = [];
+        const sessions: (SessionRow & { repoRoot: string })[] = [];
+        for (const repo of repos) {
+          if (!existsSync(repo.sqlitePath)) continue;
+          for (const row of queryInvocations(repo.sqlitePath, {})) {
+            rows.push({ ...row, repoRoot: repo.repoRoot });
+          }
+          for (const session of getAllSessions(repo.sqlitePath)) {
+            sessions.push({ ...session, repoRoot: repo.repoRoot });
+          }
+        }
 
         // Group invocations by date and tool
         const byDate = new Map<string, Map<string, number>>();
@@ -63,7 +82,6 @@ export function createDashboardServer(repoRoot: string, sqlitePath: string, data
           }));
 
         // Session count
-        const sessions = getAllSessions(sqlitePath);
         const sessionsByDate = new Map<string, number>();
         for (const s of sessions) {
           if (s.started_at) {
@@ -85,6 +103,7 @@ export function createDashboardServer(repoRoot: string, sqlitePath: string, data
             invocationTimeSeries: timeSeries,
             sessionTimeSeries,
             repoRoot,
+            repos: allRepos.map((r) => r.repoRoot),
           }),
         );
         return;
@@ -230,6 +249,17 @@ function generateDashboardHTML(): string {
       border-radius: 0.5rem;
       margin-bottom: 1rem;
     }
+    .repo-filter {
+      margin-bottom: 1.5rem;
+    }
+    .repo-filter select {
+      background: #1e293b;
+      color: #e2e8f0;
+      border: 1px solid #334155;
+      border-radius: 0.5rem;
+      padding: 0.5rem 0.75rem;
+      font-size: 0.9rem;
+    }
   </style>
 </head>
 <body>
@@ -238,6 +268,10 @@ function generateDashboardHTML(): string {
     <p class="subtitle">Session indexing, search efficiency, and warm-start effectiveness metrics</p>
 
     <div id="error-container"></div>
+    <div class="repo-filter">
+      <label for="repo-select">Repo: </label>
+      <select id="repo-select"><option value="">All repos</option></select>
+    </div>
     <div id="loading" class="loading">Loading telemetry data...</div>
     <div id="content" style="display: none;">
       <div class="metrics-grid">
@@ -278,12 +312,26 @@ function generateDashboardHTML(): string {
 
   <script>
     let invocationChart, sessionChart;
+    let repoOptionsPopulated = false;
 
     async function loadTelemetry() {
       try {
-        const res = await fetch('/api/telemetry');
+        const selectedRepo = document.getElementById('repo-select').value;
+        const url = selectedRepo ? \`/api/telemetry?repo=\${encodeURIComponent(selectedRepo)}\` : '/api/telemetry';
+        const res = await fetch(url);
         if (!res.ok) throw new Error(\`HTTP \${res.status}\`);
         const data = await res.json();
+
+        if (!repoOptionsPopulated) {
+          const select = document.getElementById('repo-select');
+          for (const repo of data.repos || []) {
+            const opt = document.createElement('option');
+            opt.value = repo;
+            opt.textContent = repo;
+            select.appendChild(opt);
+          }
+          repoOptionsPopulated = true;
+        }
 
         // Update summary metrics
         document.getElementById('total-invocations').textContent = data.totalInvocations.toLocaleString();
@@ -384,6 +432,8 @@ function generateDashboardHTML(): string {
       div.textContent = text;
       return div.innerHTML;
     }
+
+    document.getElementById('repo-select').addEventListener('change', loadTelemetry);
 
     // Load on page load and refresh every 5 seconds
     loadTelemetry();

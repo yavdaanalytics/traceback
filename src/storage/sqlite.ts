@@ -1,6 +1,6 @@
 import { DatabaseSync } from "node:sqlite";
 import { existsSync, mkdirSync } from "node:fs";
-import { dirname } from "node:path";
+import { dirname, resolve } from "node:path";
 
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS sessions (
@@ -103,16 +103,19 @@ function ensurePenaltyWeightColumn(db: DatabaseSync): void {
 // (Visual Studio Build Tools on Windows) not present on this machine. Using
 // the runtime's own SQLite avoids that native-binary install friction
 // entirely - it ships with Node, zero extra install.
-let db: DatabaseSync | undefined;
+const dbHandles = new Map<string, DatabaseSync>();
 
 export function getDb(dbPath: string): DatabaseSync {
-  if (db) return db;
-  const dir = dirname(dbPath);
+  const key = resolve(dbPath);
+  const existing = dbHandles.get(key);
+  if (existing) return existing;
+  const dir = dirname(key);
   if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
-  db = new DatabaseSync(dbPath);
+  const db = new DatabaseSync(key);
   db.exec("PRAGMA journal_mode = WAL");
   db.exec(SCHEMA);
   ensurePenaltyWeightColumn(db);
+  dbHandles.set(key, db);
   return db;
 }
 

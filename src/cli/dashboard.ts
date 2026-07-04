@@ -2,11 +2,14 @@
 import { execFileSync } from "node:child_process";
 import { createDashboardServer } from "../dashboard/server.js";
 import { defaultDataDir, defaultSqlitePath } from "../ingest/indexer.js";
+import { registerRepo } from "../dashboard/registry.js";
 
 const repoRoot = execFileSync("git", ["rev-parse", "--show-toplevel"], {
   encoding: "utf-8",
   stdio: ["pipe", "pipe", "ignore"],
 }).trim();
+
+registerRepo(repoRoot);
 
 const port = parseInt(process.env.TRACEBACK_DASHBOARD_PORT ?? "5555", 10);
 const sqlitePath = defaultSqlitePath(repoRoot);
