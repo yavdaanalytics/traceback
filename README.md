@@ -122,9 +122,30 @@ Together they're **fast and queryable**. Separately, each is incomplete.
 
 traceback logs telemetry on every tool invocation — how deep in history a match reached, how many lines were scoped vs. an unscoped grep baseline, whether the match was a hit or miss. Over time, this answers: *"is the warm-start funnel actually saving tokens, or just moving the problem around?"*
 
-When the agent gets a match wrong (semantic recall pointed at the wrong session), it can submit feedback: `submit_feedback(session_id, verdict="reject")`. traceback then **down-weights that session's future ranking** — not deleting it, just making it less likely to surface next time. This is a lightweight form of HITL loop: the system learns from human corrections without requiring retraining.
+### Real-Time Dashboard
 
-View telemetry with `get_efficiency_report` — live metrics on call counts, average latency, line-reduction %, average git-history depth.
+Run **`traceback-dashboard`** to launch an interactive web dashboard at `http://127.0.0.1:5555`:
+
+```sh
+cd your-repo
+traceback-dashboard
+```
+
+The dashboard displays:
+- **Invocation activity** — tool calls over time (line chart)
+- **Session indexing volume** — sessions added per day (bar chart)
+- **Per-tool metrics** — invocation count, average latency, average line-reduction % for each tool
+- **Summary KPIs** — total invocations, indexed sessions, overall line reduction, average latency
+
+Dashboard data comes live from your repo's `data/traceback.db` and updates every 5 seconds. Environment variable `TRACEBACK_DASHBOARD_PORT` overrides the default port.
+
+### Manual Telemetry Queries
+
+For programmatic access, call `get_efficiency_report` from the MCP server — returns JSON with call counts, average latency, line-reduction %, average git-history depth.
+
+### Human-in-the-Loop Feedback
+
+When the agent gets a match wrong (semantic recall pointed at the wrong session), it can submit feedback: `submit_feedback(session_id, verdict="reject")`. traceback then **down-weights that session's future ranking** — not deleting it, just making it less likely to surface next time. This is a lightweight form of HITL loop: the system learns from human corrections without requiring retraining.
 
 ## All Local, All Free
 
@@ -155,14 +176,15 @@ This installs the git post-commit hook and merges traceback into your editor's M
 
 For manual setup or unsupported clients, see the [full install guide](https://github.com/anthropics/traceback#installation).
 
-## Development
+## Development & Observability
 
 ```sh
-npm run build              # compile TypeScript
-npm test                   # full test suite (59 tests across unit/integration/e2e/regression/evals)
-npm run bench               # performance benchmarks at 1k/5k/10k-row scale
-npm run security:sast       # static analysis (requires `pip install semgrep`)
-npm run security:audit      # dependency audit
+npm run build                 # compile TypeScript
+npm test                      # full test suite (61 tests across unit/integration/e2e/regression/evals)
+npm run bench                 # performance benchmarks at 1k/5k/10k-row scale
+npm run security:sast         # static analysis (requires `pip install semgrep`)
+npm run security:audit        # dependency audit
+traceback-dashboard           # launch web dashboard at http://127.0.0.1:5555
 ```
 
 See `CLAUDE.md` for testing details, architecture notes, and the hard security rule (command-injection prevention via `execFileSync` argv arrays, not string interpolation).
