@@ -4,3 +4,4 @@ data/
 local_cache/
 ROADMAP.md
 *.log
+.cursor/mcp.json

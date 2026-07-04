@@ -1,0 +1,10 @@
+{
+  "mcpServers": {
+    "traceback": {
+      "command": "node",
+      "args": [
+        "C:/source/traceback/dist/mcp/index.js"
+      ]
+    }
+  }
+}
