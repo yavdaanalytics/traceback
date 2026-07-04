@@ -5,21 +5,32 @@
   "type": "module",
   "bin": {
     "traceback": "dist/mcp/index.js",
-    "traceback-install-hook": "dist/cli/install-hook.js"
+    "traceback-install-hook": "dist/cli/install-hook.js",
+    "traceback-setup": "dist/cli/setup.js"
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",
-    "start": "node dist/mcp/index.js"
+    "start": "node dist/mcp/index.js",
+    "test": "vitest run",
+    "test:unit": "vitest run tests/unit",
+    "test:integration": "vitest run tests/integration",
+    "test:e2e": "vitest run tests/e2e",
+    "test:regression": "vitest run tests/regression",
+    "test:evals": "vitest run tests/evals",
+    "bench": "node scripts/bench.mjs",
+    "security:sast": "semgrep --config auto --config p/command-injection src --error",
+    "security:audit": "npm audit"
   },
   "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.0.4",
     "@lancedb/lancedb": "^0.13.0",
+    "@modelcontextprotocol/sdk": "^1.0.4",
     "fastembed": "^1.14.1",
     "zod": "^4.0.0"
   },
   "devDependencies": {
     "@types/node": "^22.10.5",
-    "typescript": "^5.7.2"
+    "typescript": "^5.7.2",
+    "vitest": "4.1.9"
   },
   "engines": {
     "node": ">=22.5.0"

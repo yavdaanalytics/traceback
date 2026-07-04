@@ -58,7 +58,43 @@ CREATE TABLE IF NOT EXISTS docs_touched (
   file_path TEXT NOT NULL,
   PRIMARY KEY (ref_id, file_path)
 );
+
+CREATE TABLE IF NOT EXISTS tool_invocations (
+  invocation_id INTEGER PRIMARY KEY AUTOINCREMENT,
+  tool_name TEXT NOT NULL,
+  mcp_method_name TEXT NOT NULL,
+  input_args TEXT NOT NULL,
+  started_at INTEGER NOT NULL,
+  duration_ms REAL NOT NULL,
+  ok INTEGER NOT NULL,
+  error_message TEXT,
+  git_depth_days REAL,
+  matched_ref TEXT,
+  delta_window_scale INTEGER,
+  warm_lines_pulled INTEGER,
+  global_lines_skipped INTEGER,
+  baseline_lines INTEGER
+);
+
+CREATE TABLE IF NOT EXISTS feedback (
+  feedback_id INTEGER PRIMARY KEY AUTOINCREMENT,
+  invocation_id INTEGER,
+  session_id TEXT,
+  verdict TEXT NOT NULL CHECK (verdict IN ('confirm','reject')),
+  note TEXT,
+  created_at INTEGER NOT NULL
+);
 `;
+
+// CREATE TABLE IF NOT EXISTS can't add a column to an already-existing table,
+// so sessions.penalty_weight (added after the initial schema) needs a guarded
+// ALTER TABLE, idempotent and safe to run on every open.
+function ensurePenaltyWeightColumn(db: DatabaseSync): void {
+  const cols = db.prepare(`PRAGMA table_info(sessions)`).all() as Array<{ name: string }>;
+  if (!cols.some((c) => c.name === "penalty_weight")) {
+    db.exec(`ALTER TABLE sessions ADD COLUMN penalty_weight REAL NOT NULL DEFAULT 0`);
+  }
+}
 
 // Uses Node's built-in node:sqlite (stable enough on this Node version, see
 // build note below) instead of better-sqlite3: better-sqlite3 ships prebuilt
@@ -76,6 +112,7 @@ export function getDb(dbPath: string): DatabaseSync {
   db = new DatabaseSync(dbPath);
   db.exec("PRAGMA journal_mode = WAL");
   db.exec(SCHEMA);
+  ensurePenaltyWeightColumn(db);
   return db;
 }
 
@@ -244,4 +281,94 @@ export function addDocTouched(dbPath: string, row: { ref_id: string; file_path: 
        ON CONFLICT(ref_id, file_path) DO NOTHING`,
     )
     .run(row as unknown as Record<string, import("node:sqlite").SQLInputValue>);
+}
+
+export interface ToolInvocationRow {
+  invocation_id: number;
+  tool_name: string;
+  mcp_method_name: string;
+  input_args: string;
+  started_at: number;
+  duration_ms: number;
+  ok: number;
+  error_message: string | null;
+  git_depth_days: number | null;
+  matched_ref: string | null;
+  delta_window_scale: number | null;
+  warm_lines_pulled: number | null;
+  global_lines_skipped: number | null;
+  baseline_lines: number | null;
+}
+
+// Insert-only - telemetry never updates a row after the fact.
+export function insertToolInvocation(dbPath: string, row: Omit<ToolInvocationRow, "invocation_id">): number {
+  const result = getDb(dbPath)
+    .prepare(
+      `INSERT INTO tool_invocations
+         (tool_name, mcp_method_name, input_args, started_at, duration_ms, ok, error_message,
+          git_depth_days, matched_ref, delta_window_scale, warm_lines_pulled, global_lines_skipped, baseline_lines)
+       VALUES
+         ($tool_name, $mcp_method_name, $input_args, $started_at, $duration_ms, $ok, $error_message,
+          $git_depth_days, $matched_ref, $delta_window_scale, $warm_lines_pulled, $global_lines_skipped, $baseline_lines)`,
+    )
+    .run(row as unknown as Record<string, import("node:sqlite").SQLInputValue>);
+  return Number(result.lastInsertRowid);
+}
+
+export function getToolInvocation(dbPath: string, invocationId: number): ToolInvocationRow | undefined {
+  return getDb(dbPath)
+    .prepare(`SELECT * FROM tool_invocations WHERE invocation_id = $invocation_id`)
+    .get({ invocation_id: invocationId }) as ToolInvocationRow | undefined;
+}
+
+export function queryInvocations(
+  dbPath: string,
+  filter: { since?: number; toolName?: string },
+): ToolInvocationRow[] {
+  const conditions: string[] = [];
+  const params: Record<string, import("node:sqlite").SQLInputValue> = {};
+  if (filter.since != null) {
+    conditions.push("started_at >= $since");
+    params.since = filter.since;
+  }
+  if (filter.toolName) {
+    conditions.push("tool_name = $tool_name");
+    params.tool_name = filter.toolName;
+  }
+  const where = conditions.length ? `WHERE ${conditions.join(" AND ")}` : "";
+  return getDb(dbPath)
+    .prepare(`SELECT * FROM tool_invocations ${where} ORDER BY invocation_id ASC`)
+    .all(params) as unknown as ToolInvocationRow[];
+}
+
+export interface FeedbackRow {
+  feedback_id: number;
+  invocation_id: number | null;
+  session_id: string | null;
+  verdict: "confirm" | "reject";
+  note: string | null;
+  created_at: number;
+}
+
+export function insertFeedback(dbPath: string, row: Omit<FeedbackRow, "feedback_id">): number {
+  const result = getDb(dbPath)
+    .prepare(
+      `INSERT INTO feedback (invocation_id, session_id, verdict, note, created_at)
+       VALUES ($invocation_id, $session_id, $verdict, $note, $created_at)`,
+    )
+    .run(row as unknown as Record<string, import("node:sqlite").SQLInputValue>);
+  return Number(result.lastInsertRowid);
+}
+
+export function getPenaltyWeight(dbPath: string, sessionId: string): number {
+  const row = getDb(dbPath)
+    .prepare(`SELECT penalty_weight FROM sessions WHERE session_id = $session_id`)
+    .get({ session_id: sessionId }) as { penalty_weight: number } | undefined;
+  return row?.penalty_weight ?? 0;
+}
+
+export function incrementPenaltyWeight(dbPath: string, sessionId: string, step: number): void {
+  getDb(dbPath)
+    .prepare(`UPDATE sessions SET penalty_weight = penalty_weight + $step WHERE session_id = $session_id`)
+    .run({ session_id: sessionId, step });
 }

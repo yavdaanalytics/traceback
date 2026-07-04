@@ -9,7 +9,7 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 // package root for git-invoked calls (node dist/cli/hook-entry.js).
 const distDir = dirname(__dirname);
 
-function installHook(targetRepoPath: string): void {
+export function installHook(targetRepoPath: string): void {
   const repoRoot = execFileSync("git", ["rev-parse", "--show-toplevel"], {
     cwd: targetRepoPath,
     encoding: "utf-8",
@@ -55,5 +55,9 @@ function installHook(targetRepoPath: string): void {
   }
 }
 
-const targetRepoPath = process.argv[2] ?? process.cwd();
-installHook(targetRepoPath);
+// Guarded so setup.ts can import installHook() directly without re-running it
+// as a side effect of the import.
+if (import.meta.url === `file://${process.argv[1].replace(/\\/g, "/")}`) {
+  const targetRepoPath = process.argv[2] ?? process.cwd();
+  installHook(targetRepoPath);
+}
