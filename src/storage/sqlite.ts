@@ -126,6 +126,7 @@ export interface SessionRow {
   slug: string | null;
   raw_path: string;
   intent: string | null;
+  penalty_weight?: number;
 }
 
 export function upsertSession(dbPath: string, row: SessionRow): void {
@@ -371,4 +372,15 @@ export function incrementPenaltyWeight(dbPath: string, sessionId: string, step: 
   getDb(dbPath)
     .prepare(`UPDATE sessions SET penalty_weight = penalty_weight + $step WHERE session_id = $session_id`)
     .run({ session_id: sessionId, step });
+}
+
+export function getAllSessions(dbPath: string): SessionRow[] {
+  return (
+    getDb(dbPath)
+      .prepare(
+        `SELECT session_id, adapter_id, project_path, git_branch, started_at, ended_at, slug, raw_path, intent, penalty_weight
+       FROM sessions ORDER BY started_at DESC`,
+      )
+      .all() as unknown as SessionRow[]
+  );
 }
