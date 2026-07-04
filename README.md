@@ -186,9 +186,6 @@ See `CLAUDE.md` for testing details, architecture notes, and the hard security r
 - Grep is slow but exact (lower recall, high precision).
 - Together: fast + exact.
 
-## Future Roadmap
-
-See `ROADMAP.md` (local file, not published) for deferred features like the **Engineering Episode** model (richer versioning than commits), **Rust rewrite** (multi-repo concurrency), and **time-travel UX** (jump directly to a resolved session/commit range).
 
 ## Contributing
 
