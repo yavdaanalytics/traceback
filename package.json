@@ -6,7 +6,8 @@
   "bin": {
     "traceback": "dist/mcp/index.js",
     "traceback-install-hook": "dist/cli/install-hook.js",
-    "traceback-setup": "dist/cli/setup.js"
+    "traceback-setup": "dist/cli/setup.js",
+    "traceback-dashboard": "dist/cli/dashboard.js"
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",
