@@ -11,7 +11,7 @@ import { submitFeedback } from "./feedback.js";
 import { getCommitContext, getSessionLineage } from "./lineage.js";
 import { astSearch, blameCurrent, searchGrep } from "./search.js";
 import { computeGrepBaseline, renderEfficiencyReport, withTelemetry } from "./telemetry.js";
-import { findSimilarSessions, type SessionSearchResult } from "./recall.js";
+import { findSimilarSessionsWithContext, type SessionWithContext } from "./recall.js";
 import { searchWithFallback } from "./fallback.js";
 import { getCommit, getFilesForCommit, getLinksForSession, setOutcome } from "../storage/sqlite.js";
 
@@ -34,7 +34,7 @@ server.registerTool(
     config.sqlitePath,
     "find_similar_sessions",
     async ({ query, top_k, project_path }) => {
-      const results = await findSimilarSessions(config, query, top_k, project_path);
+      const results = await findSimilarSessionsWithContext(config, query, top_k, project_path);
       return {
         content: [{ type: "text", text: JSON.stringify(results, null, 2) }],
       };

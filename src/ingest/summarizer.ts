@@ -26,3 +26,16 @@ export function digestSession(session: ParsedSession): string {
   const toolDigests = session.turns.flatMap((t) => t.toolCalls.map(digestToolCall));
   return [...userPrompts, ...toolDigests].join("\n");
 }
+
+// Extract intent from first user turn (the initial question/goal)
+// Truncated to ~100 chars for readability in UI/reports
+export function extractIntent(session: ParsedSession): string | null {
+  const firstUserTurn = session.turns.find((t) => t.role === "user" && t.text);
+  if (!firstUserTurn?.text) return null;
+
+  // Truncate to first sentence or 100 chars, whichever is shorter
+  const text = firstUserTurn.text.trim();
+  const firstSentence = text.split(/[.!?]+/)[0];
+  const intent = firstSentence.substring(0, 100);
+  return intent.length > 0 ? intent : null;
+}
