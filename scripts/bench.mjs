@@ -18,13 +18,55 @@ function percentile(sorted, p) {
   return sorted[idx];
 }
 
-function summarize(label, samplesMs) {
+// Latency SLA thresholds for CI-gated regression detection.
+// Conservative budgets to catch 2-3x performance regressions while allowing
+// for OS variance and cold-start effects.
+const SLA_BUDGETS = {
+  "sqlite-insert": { p95: 20, p99: 50 }, // ms per insert
+  "sqlite-query": { p95: 200, p99: 250 }, // ms per query scan (10k rows)
+  "lancedb-search-1k": { p95: 100, p99: 150 }, // ms for 1k-row search
+  "lancedb-search-5k": { p95: 150, p99: 200 }, // ms for 5k-row search
+  "lancedb-search-10k": { p95: 150, p99: 200 }, // ms for 10k-row search
+};
+
+const violations = [];
+
+function summarize(label, samplesMs, scale = null) {
   const sorted = [...samplesMs].sort((a, b) => a - b);
   const avg = samplesMs.reduce((s, v) => s + v, 0) / samplesMs.length;
+  const p50 = percentile(sorted, 50);
+  const p95 = percentile(sorted, 95);
+  const p99 = percentile(sorted, 99);
+  const max = sorted[sorted.length - 1];
+
   console.log(
-    `${label}: n=${samplesMs.length} avg=${avg.toFixed(2)}ms p50=${percentile(sorted, 50).toFixed(2)}ms ` +
-      `p95=${percentile(sorted, 95).toFixed(2)}ms max=${sorted[sorted.length - 1].toFixed(2)}ms`,
+    `${label}: n=${samplesMs.length} avg=${avg.toFixed(2)}ms p50=${p50.toFixed(2)}ms ` +
+      `p95=${p95.toFixed(2)}ms p99=${p99.toFixed(2)}ms max=${max.toFixed(2)}ms`,
   );
+
+  // Check against SLA budgets
+  const budgetKey = label.replace(/\s*\([^)]*\)/, "").toLowerCase().replace(/\s+/g, "-");
+  const budget = SLA_BUDGETS[budgetKey];
+  if (budget) {
+    if (p95 > budget.p95) {
+      violations.push({
+        test: label,
+        metric: "p95",
+        actual: p95.toFixed(2),
+        budget: budget.p95,
+        exceeded: (p95 - budget.p95).toFixed(2),
+      });
+    }
+    if (p99 > budget.p99) {
+      violations.push({
+        test: label,
+        metric: "p99",
+        actual: p99.toFixed(2),
+        budget: budget.p99,
+        exceeded: (p99 - budget.p99).toFixed(2),
+      });
+    }
+  }
 }
 
 async function benchSqlite(dbPath, count) {
@@ -48,7 +90,7 @@ async function benchSqlite(dbPath, count) {
     });
     insertTimes.push(performance.now() - t0);
   }
-  summarize(`sqlite insertToolInvocation (n=${count})`, insertTimes);
+  summarize(`sqlite-insert (n=${count})`, insertTimes);
 
   const queryTimes = [];
   for (let i = 0; i < 20; i++) {
@@ -56,7 +98,7 @@ async function benchSqlite(dbPath, count) {
     queryInvocations(dbPath, {});
     queryTimes.push(performance.now() - t0);
   }
-  summarize(`sqlite queryInvocations (full table scan, ${count} rows, 20 runs)`, queryTimes);
+  summarize(`sqlite-query (full table scan, ${count} rows, 20 runs)`, queryTimes);
 }
 
 async function benchLanceDb(dataDir, count) {
@@ -84,7 +126,8 @@ async function benchLanceDb(dataDir, count) {
     await searchSimilarTurns(dataDir, query, 10);
     searchTimes.push(performance.now() - t0);
   }
-  summarize(`lancedb searchSimilarTurns (top_k=10, ${count} rows, 20 runs)`, searchTimes);
+  const scaleLabel = count === 1_000 ? "1k" : count === 5_000 ? "5k" : "10k";
+  summarize(`lancedb-search-${scaleLabel} (top_k=10, ${count} rows, 20 runs)`, searchTimes);
 }
 
 async function main() {
@@ -104,6 +147,22 @@ async function main() {
         // ignore
       }
     }
+  }
+
+  // Report latency budget violations
+  if (violations.length > 0) {
+    console.error("\n🔴 LATENCY BUDGET VIOLATIONS (CI will fail):");
+    console.error("═".repeat(80));
+    for (const violation of violations) {
+      console.error(
+        `  ${violation.test}: ${violation.metric}=${violation.actual}ms (budget=${violation.budget}ms, exceeded by ${violation.exceeded}ms)`,
+      );
+    }
+    console.error("═".repeat(80));
+    console.error(`\n${violations.length} SLA violation(s) detected. Performance regression detected.`);
+    process.exit(1);
+  } else {
+    console.log("\n✅ All latency budgets OK (no performance regressions detected)");
   }
 }
 

@@ -179,15 +179,28 @@ For manual setup or unsupported clients, see the [full install guide](https://gi
 ## Development & Observability
 
 ```sh
-npm run build                 # compile TypeScript
-npm test                      # full test suite (61 tests across unit/integration/e2e/regression/evals)
-npm run bench                 # performance benchmarks at 1k/5k/10k-row scale
+npm run build                 # compile TypeScript → dist/
+npm test                      # full test suite (231 tests: unit, integration, e2e, regression, evals, security, contracts)
+npm run bench                 # performance benchmarks at 1k/5k/10k-row scale with SLA gates
 npm run security:sast         # static analysis (requires `pip install semgrep`)
 npm run security:audit        # dependency audit
 traceback-dashboard           # launch web dashboard at http://127.0.0.1:5555
 ```
 
-See `CLAUDE.md` for testing details, architecture notes, and the hard security rule (command-injection prevention via `execFileSync` argv arrays, not string interpolation).
+### Security & Quality Gates
+
+traceback enforces three critical P0 security and performance gates:
+
+1. **Prompt Injection Defense** (22 tests): validates that malicious LLM-generated inputs (SQL injection, git option injection, shell metacharacters, file path traversal) cannot break tool execution or expose unintended data. Core defense: `execFileSync` argv array isolation (command inputs passed as separate array elements, never interpolated into shell strings).
+
+2. **Tool Schema Contracts** (26 tests): ensures all 14 MCP tool signatures maintain backwards-compatibility. Tests validate required fields, enum constraints, type constraints, and that new optional fields never break old consumers. Adding required fields is explicitly prevented (would break existing agents).
+
+3. **Latency SLA Budgets** (CI-gated in `npm run bench`): performance benchmarks fail CI if latencies exceed thresholds, catching 2-3x regressions automatically:
+   - `sqlite-insert`: p95 ≤ 20ms, p99 ≤ 50ms
+   - `sqlite-query` (10k rows): p95 ≤ 200ms, p99 ≤ 250ms
+   - `lancedb-search`: p95 ≤ 100-150ms (scale-dependent)
+
+See `CLAUDE.md` for testing architecture, regression pinning, and the hard security rule (command-injection prevention via `execFileSync` argv arrays, not string interpolation).
 
 ## Design Philosophy
 
