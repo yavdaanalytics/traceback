@@ -89,7 +89,26 @@ function main(): void {
     encoding: "utf-8",
   }).trim();
 
-  installHook(repoRoot);
+  // Check if global hooks are already configured
+  let hasGlobalHooks = false;
+  try {
+    const globalHooksPath = execFileSync("git", ["config", "--global", "core.hooksPath"], {
+      encoding: "utf-8",
+      stdio: ["pipe", "pipe", "pipe"],
+    }).trim();
+    if (globalHooksPath) {
+      console.log(`traceback: detected global core.hooksPath at ${globalHooksPath}`);
+      hasGlobalHooks = true;
+    }
+  } catch {
+    // No global hooksPath configured - will install per-repo hook
+  }
+
+  if (!hasGlobalHooks) {
+    installHook(repoRoot);
+  } else {
+    console.log("traceback: skipping per-repo hook installation (global hooks already configured)");
+  }
 
   let anyFound = false;
   for (const host of HOSTS) {

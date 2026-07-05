@@ -57,7 +57,8 @@ export function installHook(targetRepoPath: string): void {
 
 // Guarded so setup.ts can import installHook() directly without re-running it
 // as a side effect of the import.
-if (import.meta.url === `file://${process.argv[1].replace(/\\/g, "/")}`) {
+const scriptPath = fileURLToPath(import.meta.url);
+if (process.argv[1] === scriptPath || process.argv[1].replace(/\\/g, "/") === scriptPath.replace(/\\/g, "/")) {
   const targetRepoPath = process.argv[2] ?? process.cwd();
   installHook(targetRepoPath);
 }

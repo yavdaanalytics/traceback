@@ -5,7 +5,7 @@ import { embedText, embedTexts } from "../embedding/embedder.js";
 import { upsertTurnEmbeddings, type TurnEmbeddingRow } from "../storage/lancedb.js";
 import { getSession, upsertSession } from "../storage/sqlite.js";
 import { normalizePath } from "../util/paths.js";
-import { digestSession, digestTurn } from "./summarizer.js";
+import { digestSession, digestTurn, extractIntent } from "./summarizer.js";
 
 export interface IndexConfig {
   dataDir: string;
@@ -47,6 +47,10 @@ export async function ingestStaleSessions(
 async function ingestOneSession(config: IndexConfig, adapter: SessionAdapter, ref: SessionRef): Promise<void> {
   const session = adapter.loadSession(ref);
 
+  // Get existing intent or extract from first user turn
+  const existingIntentVal = existingIntent(config, session.sessionId);
+  const intent = existingIntentVal ?? extractIntent(session) ?? null;
+
   upsertSession(config.sqlitePath, {
     session_id: session.sessionId,
     adapter_id: session.adapterId,
@@ -56,7 +60,7 @@ async function ingestOneSession(config: IndexConfig, adapter: SessionAdapter, re
     ended_at: session.endedAt,
     slug: session.slug ?? null,
     raw_path: ref.projectPath,
-    intent: existingIntent(config, session.sessionId),
+    intent,
   });
 
   const turnDigests = session.turns
