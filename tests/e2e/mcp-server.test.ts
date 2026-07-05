@@ -74,7 +74,7 @@ afterAll(() => {
 });
 
 describe("MCP protocol wiring", () => {
-  it("lists all 12 registered tools with valid JSON schemas", async () => {
+  it("lists all 14 registered tools with valid JSON schemas", async () => {
     const result = await send("tools/list");
     const names = result.tools.map((t: { name: string }) => t.name).sort();
     expect(names).toEqual(
@@ -85,10 +85,12 @@ describe("MCP protocol wiring", () => {
         "get_commit_context",
         "get_efficiency_report",
         "get_session_lineage",
+        "git_history_scope",
         "ingest_session",
         "link_session_commit",
         "list_adapters",
         "search_sessions_grep",
+        "search_with_fallback",
         "submit_feedback",
         "tag_outcome",
       ].sort(),

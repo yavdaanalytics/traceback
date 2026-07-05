@@ -7,10 +7,12 @@ export function resolveConfig(repoPath: string = process.cwd()): {
   repoPath: string;
   dataDir: string;
   sqlitePath: string;
+  confidenceThreshold: number;
 } {
   return {
     repoPath,
     dataDir: defaultDataDir(repoPath),
     sqlitePath: defaultSqlitePath(repoPath),
+    confidenceThreshold: Number(process.env.TRACEBACK_CONFIDENCE_THRESHOLD ?? "2.0"),
   };
 }

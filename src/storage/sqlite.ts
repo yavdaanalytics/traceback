@@ -96,6 +96,14 @@ function ensurePenaltyWeightColumn(db: DatabaseSync): void {
   }
 }
 
+// Search mode column (added for Phase 2 fallback routing eval signal).
+function ensureSearchModeColumn(db: DatabaseSync): void {
+  const cols = db.prepare(`PRAGMA table_info(tool_invocations)`).all() as Array<{ name: string }>;
+  if (!cols.some((c) => c.name === "search_mode")) {
+    db.exec(`ALTER TABLE tool_invocations ADD COLUMN search_mode TEXT`);
+  }
+}
+
 // Uses Node's built-in node:sqlite (stable enough on this Node version, see
 // build note below) instead of better-sqlite3: better-sqlite3 ships prebuilt
 // native binaries per Node ABI/platform and has none published yet for this
@@ -115,6 +123,7 @@ export function getDb(dbPath: string): DatabaseSync {
   db.exec("PRAGMA journal_mode = WAL");
   db.exec(SCHEMA);
   ensurePenaltyWeightColumn(db);
+  ensureSearchModeColumn(db);
   dbHandles.set(key, db);
   return db;
 }
@@ -302,6 +311,7 @@ export interface ToolInvocationRow {
   warm_lines_pulled: number | null;
   global_lines_skipped: number | null;
   baseline_lines: number | null;
+  search_mode: string | null;
 }
 
 // Insert-only - telemetry never updates a row after the fact.
@@ -310,10 +320,10 @@ export function insertToolInvocation(dbPath: string, row: Omit<ToolInvocationRow
     .prepare(
       `INSERT INTO tool_invocations
          (tool_name, mcp_method_name, input_args, started_at, duration_ms, ok, error_message,
-          git_depth_days, matched_ref, delta_window_scale, warm_lines_pulled, global_lines_skipped, baseline_lines)
+          git_depth_days, matched_ref, delta_window_scale, warm_lines_pulled, global_lines_skipped, baseline_lines, search_mode)
        VALUES
          ($tool_name, $mcp_method_name, $input_args, $started_at, $duration_ms, $ok, $error_message,
-          $git_depth_days, $matched_ref, $delta_window_scale, $warm_lines_pulled, $global_lines_skipped, $baseline_lines)`,
+          $git_depth_days, $matched_ref, $delta_window_scale, $warm_lines_pulled, $global_lines_skipped, $baseline_lines, $search_mode)`,
     )
     .run(row as unknown as Record<string, import("node:sqlite").SQLInputValue>);
   return Number(result.lastInsertRowid);

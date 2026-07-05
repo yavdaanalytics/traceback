@@ -34,6 +34,7 @@ export interface TelemetryExtras {
   deltaWindowScale?: number;
   warmLinesPulled?: number;
   baselineLines?: number; // when set alongside warmLinesPulled, globalLinesSkipped is derived
+  mode?: string; // for fallback routing eval signal
 }
 
 type ToolHandler<A, R> = (args: A) => Promise<R> | R;
@@ -72,6 +73,7 @@ export function withTelemetry<A, R>(
         warm_lines_pulled: warm ?? null,
         global_lines_skipped: baseline != null && warm != null ? Math.max(0, baseline - warm) : null,
         baseline_lines: baseline ?? null,
+        search_mode: extras?.mode ?? null,
       });
       return result;
     } catch (error) {
@@ -90,6 +92,7 @@ export function withTelemetry<A, R>(
         warm_lines_pulled: null,
         global_lines_skipped: null,
         baseline_lines: null,
+        search_mode: null,
       });
       throw error;
     }
