@@ -4,15 +4,16 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import { z } from "zod";
 import { availableAdapters, listAdapters } from "../adapters/registry.js";
 import { resolveConfig } from "../config.js";
-import { embedText } from "../embedding/embedder.js";
+import { deriveSearchTerms, gitHistoryScope } from "../git/history-scope.js";
 import { linkSessionToCommit } from "../git/linkage.js";
 import { ingestStaleSessions } from "../ingest/indexer.js";
 import { submitFeedback } from "./feedback.js";
 import { getCommitContext, getSessionLineage } from "./lineage.js";
 import { astSearch, blameCurrent, searchGrep } from "./search.js";
 import { computeGrepBaseline, renderEfficiencyReport, withTelemetry } from "./telemetry.js";
-import { searchSimilarTurns } from "../storage/lancedb.js";
-import { getCommit, getFilesForCommit, getLinksForSession, getPenaltyWeight, setOutcome } from "../storage/sqlite.js";
+import { findSimilarSessions, type SessionSearchResult } from "./recall.js";
+import { searchWithFallback } from "./fallback.js";
+import { getCommit, getFilesForCommit, getLinksForSession, setOutcome } from "../storage/sqlite.js";
 
 const config = resolveConfig();
 
@@ -33,30 +34,9 @@ server.registerTool(
     config.sqlitePath,
     "find_similar_sessions",
     async ({ query, top_k, project_path }) => {
-      const vector = await embedText(query);
-      // Over-fetch so the penalty re-sort below has room to promote
-      // lower-ranked-but-unpenalized results into the top_k window instead
-      // of just re-ordering an already-truncated set.
-      const raw = await searchSimilarTurns(config.dataDir, vector, Math.max(top_k, top_k * 3), project_path);
-      // LanceDB's default .search() metric is ascending L2 distance exposed
-      // as _distance (lower = more similar), not a similarity score - no
-      // .metricType() call exists anywhere in this codebase, so this is the
-      // default. Penalizing a session means ADDING its penalty_weight to
-      // _distance (pushing a rejected session further down), then
-      // re-sorting ascending.
-      const withPenalty = raw.map((r) => {
-        const penalty = getPenaltyWeight(config.sqlitePath, r.session_id);
-        const distance = (r as unknown as { _distance?: number })._distance ?? 0;
-        return { row: r, adjusted: distance + penalty };
-      });
-      withPenalty.sort((a, b) => a.adjusted - b.adjusted);
-      const results = withPenalty.slice(0, top_k).map((w) => w.row);
-      // Strip the raw embedding vectors before returning - they're dead weight
-      // in an LLM tool result (this is exactly the context-bloat problem the
-      // funnel exists to avoid) and are never needed by the caller.
-      const trimmed = results.map(({ vector: _vector, ...rest }) => rest);
+      const results = await findSimilarSessions(config, query, top_k, project_path);
       return {
-        content: [{ type: "text", text: JSON.stringify(trimmed, null, 2) }],
+        content: [{ type: "text", text: JSON.stringify(results, null, 2) }],
       };
     },
     (_args, result) => {
@@ -66,6 +46,36 @@ server.registerTool(
         deltaWindowScale: first.length,
         matchedRef: first[0].session_id,
         gitDepthDays: (Date.now() - first[0].timestamp) / 86_400_000,
+      };
+    },
+  ),
+);
+
+server.registerTool(
+  "git_history_scope",
+  {
+    description:
+      "Cold-start scoping via git log (pickaxe) and git blame. Derives search terms from a natural-language query and returns top commits that touched related code, with their changed files. Useful for fallback scope narrowing when session-vector search finds nothing or has low confidence.",
+    inputSchema: {
+      terms: z.array(z.string()).min(1).describe("Search terms for git log -S (pickaxe); usually derived from deriveSearchTerms(query)"),
+      file: z.string().optional().describe("Optional: if given, also run git blame -C on this file to find the most recent touching commit"),
+      line: z.number().int().positive().optional().describe("Optional: line number for blame -L; ignored if file is not given"),
+      repo_path: z.string().optional(),
+    },
+  },
+  withTelemetry(
+    config.sqlitePath,
+    "git_history_scope",
+    async ({ terms, file, line, repo_path }) => {
+      const results = gitHistoryScope(repo_path ?? config.repoPath, terms, { file, line });
+      return { content: [{ type: "text", text: JSON.stringify(results, null, 2) }] };
+    },
+    ({ terms, file }, result) => {
+      const parsed = JSON.parse(result.content[0].text as string) as Array<{ commit_hash: string; files_changed: string[] }>;
+      const filesCount = parsed.reduce((sum, r) => sum + r.files_changed.length, 0);
+      return {
+        deltaWindowScale: filesCount,
+        matchedRef: parsed.length > 0 ? parsed[0].commit_hash : undefined,
       };
     },
   ),
@@ -300,6 +310,51 @@ server.registerTool(
     const text = renderEfficiencyReport(config.sqlitePath, { since, toolName: tool_name });
     return { content: [{ type: "text", text }] };
   },
+);
+
+server.registerTool(
+  "search_with_fallback",
+  {
+    description:
+      "Orchestrated warm-start search: tries session-vector matches first, then git-history pickaxe, then full-repo grep, logging every decision branch for eval. Returns both the grep result and the scoping decisions (mode + sources), so every search decision is auditable and the confidence threshold can be tuned empirically.",
+    inputSchema: {
+      query: z.string().describe("Natural-language description of the problem/symptom to search for"),
+      pattern: z.string().optional().describe("Optional explicit regex pattern for grep; if omitted, derived from deriveSearchTerms(query)"),
+      project_path: z.string().optional().describe("Optional: restrict to sessions from this repo/project path"),
+      repo_path: z.string().optional(),
+    },
+  },
+  withTelemetry(
+    config.sqlitePath,
+    "search_with_fallback",
+    async ({ query, pattern, project_path, repo_path }) => {
+      const result = await searchWithFallback(
+        {
+          repoPath: repo_path ?? config.repoPath,
+          dataDir: config.dataDir,
+          sqlitePath: config.sqlitePath,
+          confidenceThreshold: config.confidenceThreshold,
+        },
+        { query, pattern, project_path },
+      );
+      return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
+    },
+    (args, result) => {
+      const parsed = JSON.parse(result.content[0].text as string) as { mode: string; grep_result: string; git_scope?: Array<{ commit_hash: string; files_changed: string[] }>; session_matches?: Array<{ session_id: string }> };
+      const filesCount = (parsed.git_scope ?? []).reduce((sum, c) => sum + c.files_changed.length, 0);
+      const lines = parsed.grep_result.split("\n").filter(Boolean).length;
+      const sessionMatches = parsed.session_matches ?? [];
+      const sessionRef = sessionMatches.length > 0 ? sessionMatches[0].session_id : undefined;
+      const gitRef = parsed.git_scope?.[0]?.commit_hash;
+      return {
+        mode: parsed.mode,
+        deltaWindowScale: filesCount,
+        warmLinesPulled: lines,
+        baselineLines: computeGrepBaseline(args.repo_path ?? config.repoPath, args.pattern ?? args.query),
+        matchedRef: sessionRef ?? gitRef,
+      };
+    },
+  ),
 );
 
 server.registerTool(
