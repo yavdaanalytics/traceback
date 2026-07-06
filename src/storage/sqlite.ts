@@ -148,7 +148,8 @@ export function upsertSession(dbPath: string, row: SessionRow): void {
        VALUES ($session_id, $adapter_id, $project_path, $git_branch, $started_at, $ended_at, $slug, $raw_path, $intent)
        ON CONFLICT(session_id) DO UPDATE SET
          adapter_id=excluded.adapter_id, project_path=excluded.project_path, git_branch=excluded.git_branch,
-         started_at=excluded.started_at, ended_at=excluded.ended_at, slug=excluded.slug, raw_path=excluded.raw_path`,
+         started_at=excluded.started_at, ended_at=excluded.ended_at, slug=excluded.slug, raw_path=excluded.raw_path,
+         intent=excluded.intent`,
     )
     .run(row as unknown as Record<string, import("node:sqlite").SQLInputValue>);
 }

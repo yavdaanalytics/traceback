@@ -94,6 +94,34 @@ describe("sessions", () => {
   it("returns undefined for a session that doesn't exist", () => {
     expect(getSession(dbPath, "does-not-exist")).toBeUndefined();
   });
+
+  it("updates intent on conflict instead of leaving the original value in place", () => {
+    upsertSession(dbPath, {
+      session_id: "s-intent",
+      adapter_id: "claude-code",
+      project_path: "/repo",
+      git_branch: "main",
+      started_at: 1000,
+      ended_at: null,
+      slug: null,
+      raw_path: "/raw/s-intent.jsonl",
+      intent: null,
+    });
+    expect(getSession(dbPath, "s-intent")?.intent).toBeNull();
+
+    upsertSession(dbPath, {
+      session_id: "s-intent",
+      adapter_id: "claude-code",
+      project_path: "/repo",
+      git_branch: "main",
+      started_at: 1000,
+      ended_at: 2000,
+      slug: null,
+      raw_path: "/raw/s-intent.jsonl",
+      intent: "fix the flaky test",
+    });
+    expect(getSession(dbPath, "s-intent")?.intent).toBe("fix the flaky test");
+  });
 });
 
 describe("penalty_weight migration column", () => {

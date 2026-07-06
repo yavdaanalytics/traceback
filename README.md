@@ -153,7 +153,7 @@ When the agent gets a match wrong (semantic recall pointed at the wrong session)
 - **No external services**: LanceDB is embedded, SQLite is embedded, git is already on the machine.
 - **No models to download**: `all-MiniLM-L6-v2` (22M parameters) downloads once on first use (~40MB).
 - **Single binary**: the MCP server is Node + TypeScript, cross-platform (Claude Code, Cursor, VS Code/Copilot, Windsurf, JetBrains).
-- **Installs in seconds**: `npx traceback-setup` wires the git hook and MCP config, done.
+- **Zero-setup installation**: global git hooks and Claude Code integration fully automatic; works across all IDEs identically.
 
 ## Limitations & Trade-offs
 
@@ -167,14 +167,25 @@ When the agent gets a match wrong (semantic recall pointed at the wrong session)
 
 ## Quick Install
 
+### Automatic (Recommended)
 ```sh
-cd your-repo
+npm install
+```
+Done. The setup script automatically:
+- Sets up global git hooks at `~/.traceback/hooks` (runs on every commit across all repos)
+- Configures Claude Code for automatic warm-start (UserPromptSubmit + PreToolUse hooks in `~/.claude/settings.json`)
+- Registers the MCP server in your editor's config (`.mcp.json`, `.cursor/mcp.json`, or `.vscode/mcp.json`)
+- Works identically across Claude Code, Cursor, and VS Code
+
+### Manual Trigger
+If you need to re-run setup:
+```sh
 npx traceback-setup
 ```
 
-This installs the git post-commit hook and merges traceback into your editor's MCP config (`.mcp.json`, `.cursor/mcp.json`, or `.vscode/mcp.json` — whichever exists).
+The installation is **idempotent** — safe to run multiple times. It detects existing configurations and skips redundant work.
 
-For manual setup or unsupported clients, see the [full install guide](https://github.com/anthropics/traceback#installation).
+For troubleshooting or manual setup, see the [full install guide](https://github.com/anthropics/traceback#installation).
 
 ## Development & Observability
 

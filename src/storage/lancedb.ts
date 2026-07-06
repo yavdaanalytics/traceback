@@ -1,4 +1,5 @@
 import * as lancedb from "@lancedb/lancedb";
+import { normalizePath } from "../util/paths.js";
 
 export interface TurnEmbeddingRow {
   [key: string]: unknown;
@@ -75,7 +76,12 @@ export async function searchSimilarTurns(
   const table = await conn.openTable(TURN_TABLE);
   let query = table.search(queryVector).limit(topK);
   if (projectPath) {
-    query = query.where(`project_path = '${projectPath.replace(/'/g, "''")}'`);
+    // project_path values come from different session adapters (native OS
+    // separators/casing) - normalize both sides the same way normalizePath()
+    // does elsewhere in the ingest pipeline, so a caller passing "C:\foo"
+    // still matches a row stored as "c:/foo".
+    const normalized = normalizePath(projectPath).replace(/'/g, "''");
+    query = query.where(`LOWER(REPLACE(project_path, '\\', '/')) = '${normalized}'`);
   }
   return (await query.toArray()) as unknown as TurnEmbeddingRow[];
 }
