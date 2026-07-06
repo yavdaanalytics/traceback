@@ -51,18 +51,6 @@ async function ingestOneSession(config: IndexConfig, adapter: SessionAdapter, re
   const existingIntentVal = existingIntent(config, session.sessionId);
   const intent = existingIntentVal ?? extractIntent(session) ?? null;
 
-  upsertSession(config.sqlitePath, {
-    session_id: session.sessionId,
-    adapter_id: session.adapterId,
-    project_path: session.projectPath,
-    git_branch: session.gitBranch ?? null,
-    started_at: session.startedAt,
-    ended_at: session.endedAt,
-    slug: session.slug ?? null,
-    raw_path: ref.projectPath,
-    intent,
-  });
-
   const turnDigests = session.turns
     .map((t) => ({ turn: t, text: digestTurn(t) }))
     .filter((d) => d.text.trim().length > 0);
@@ -97,6 +85,23 @@ async function ingestOneSession(config: IndexConfig, adapter: SessionAdapter, re
   }
 
   await upsertTurnEmbeddings(config.dataDir, turnRows);
+
+  // upsertSession runs last, only after embeddings are durably written: if
+  // embedTexts/upsertTurnEmbeddings throws (e.g. the ONNX OOM seen in
+  // practice), the session's ended_at must NOT advance, so the next
+  // ingestStaleSessions pass sees existing.ended_at < ref.lastModified and
+  // retries this session instead of treating a partial failure as done.
+  upsertSession(config.sqlitePath, {
+    session_id: session.sessionId,
+    adapter_id: session.adapterId,
+    project_path: session.projectPath,
+    git_branch: session.gitBranch ?? null,
+    started_at: session.startedAt,
+    ended_at: session.endedAt,
+    slug: session.slug ?? null,
+    raw_path: ref.projectPath,
+    intent,
+  });
 }
 
 function existingIntent(config: IndexConfig, sessionId: string): string | null {
