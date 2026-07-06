@@ -1,13 +1,30 @@
 #!/usr/bin/env node
 import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { dirname, isAbsolute, join } from "node:path";
+import { dirname, isAbsolute, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { execFileSync } from "node:child_process";
+import { homedir } from "node:os";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 // This file lives at dist/cli/install-hook.js at runtime; dist/ is the
 // package root for git-invoked calls (node dist/cli/hook-entry.js).
 const distDir = dirname(__dirname);
+
+export function installGlobalHook(): void {
+  const globalHooksDir = resolve(homedir(), ".traceback", "hooks");
+  const hookPath = join(globalHooksDir, "post-commit");
+
+  const templatePath = join(distDir, "..", "scripts", "post-commit.sh");
+  const template = readFileSync(templatePath, "utf-8").replace(
+    "__TRACEBACK_DIST_DIR__",
+    distDir.replace(/\\/g, "/"),
+  );
+
+  writeFileSync(hookPath, template, { mode: 0o755 });
+  chmodSync(hookPath, 0o755);
+
+  console.log(`traceback: installed global post-commit hook at ${hookPath}`);
+}
 
 export function installHook(targetRepoPath: string): void {
   const repoRoot = execFileSync("git", ["rev-parse", "--show-toplevel"], {
