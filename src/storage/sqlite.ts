@@ -84,6 +84,30 @@ CREATE TABLE IF NOT EXISTS feedback (
   note TEXT,
   created_at INTEGER NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS archive_records (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  adapter_id TEXT NOT NULL,
+  source_key TEXT NOT NULL,
+  archived_at INTEGER NOT NULL,
+  archive_path TEXT NOT NULL,
+  trigger TEXT NOT NULL,
+  UNIQUE(adapter_id, source_key)
+);
+
+CREATE TABLE IF NOT EXISTS session_attempts (
+  session_id TEXT NOT NULL,
+  attempt_index INTEGER NOT NULL,
+  commit_sha TEXT NOT NULL,
+  outcome TEXT NOT NULL CHECK (outcome IN ('kept','reverted','broke_build','superseded','unknown')),
+  linked_at INTEGER NOT NULL,
+  PRIMARY KEY (session_id, attempt_index)
+);
+
+CREATE TABLE IF NOT EXISTS index_state (
+  key TEXT PRIMARY KEY,
+  value TEXT NOT NULL
+);
 `;
 
 // CREATE TABLE IF NOT EXISTS can't add a column to an already-existing table,
@@ -101,6 +125,24 @@ function ensureSearchModeColumn(db: DatabaseSync): void {
   const cols = db.prepare(`PRAGMA table_info(tool_invocations)`).all() as Array<{ name: string }>;
   if (!cols.some((c) => c.name === "search_mode")) {
     db.exec(`ALTER TABLE tool_invocations ADD COLUMN search_mode TEXT`);
+  }
+}
+
+function ensureSessionPhaseAColumns(db: DatabaseSync): void {
+  const cols = db.prepare(`PRAGMA table_info(sessions)`).all() as Array<{ name: string }>;
+  const names = new Set(cols.map((c) => c.name));
+  const additions: Array<[string, string]> = [
+    ["transcript_ref", "TEXT"],
+    ["segment_index", "INTEGER NOT NULL DEFAULT 0"],
+    ["source_file_key", "TEXT"],
+    ["metadata_json", "TEXT"],
+    ["embedding_text", "TEXT"],
+    ["indexed_at", "INTEGER"],
+  ];
+  for (const [name, type] of additions) {
+    if (!names.has(name)) {
+      db.exec(`ALTER TABLE sessions ADD COLUMN ${name} ${type}`);
+    }
   }
 }
 
@@ -124,6 +166,7 @@ export function getDb(dbPath: string): DatabaseSync {
   db.exec(SCHEMA);
   ensurePenaltyWeightColumn(db);
   ensureSearchModeColumn(db);
+  ensureSessionPhaseAColumns(db);
   dbHandles.set(key, db);
   return db;
 }
@@ -139,19 +182,37 @@ export interface SessionRow {
   raw_path: string;
   intent: string | null;
   penalty_weight?: number;
+  transcript_ref?: string | null;
+  segment_index?: number;
+  source_file_key?: string | null;
+  metadata_json?: string | null;
+  embedding_text?: string | null;
+  indexed_at?: number | null;
 }
 
 export function upsertSession(dbPath: string, row: SessionRow): void {
   getDb(dbPath)
     .prepare(
-      `INSERT INTO sessions (session_id, adapter_id, project_path, git_branch, started_at, ended_at, slug, raw_path, intent)
-       VALUES ($session_id, $adapter_id, $project_path, $git_branch, $started_at, $ended_at, $slug, $raw_path, $intent)
+      `INSERT INTO sessions (session_id, adapter_id, project_path, git_branch, started_at, ended_at, slug, raw_path, intent,
+         transcript_ref, segment_index, source_file_key, metadata_json, embedding_text, indexed_at)
+       VALUES ($session_id, $adapter_id, $project_path, $git_branch, $started_at, $ended_at, $slug, $raw_path, $intent,
+         $transcript_ref, $segment_index, $source_file_key, $metadata_json, $embedding_text, $indexed_at)
        ON CONFLICT(session_id) DO UPDATE SET
          adapter_id=excluded.adapter_id, project_path=excluded.project_path, git_branch=excluded.git_branch,
          started_at=excluded.started_at, ended_at=excluded.ended_at, slug=excluded.slug, raw_path=excluded.raw_path,
-         intent=excluded.intent`,
+         intent=excluded.intent, transcript_ref=excluded.transcript_ref, segment_index=excluded.segment_index,
+         source_file_key=excluded.source_file_key, metadata_json=excluded.metadata_json,
+         embedding_text=excluded.embedding_text, indexed_at=excluded.indexed_at`,
     )
-    .run(row as unknown as Record<string, import("node:sqlite").SQLInputValue>);
+    .run({
+      ...row,
+      transcript_ref: row.transcript_ref ?? null,
+      segment_index: row.segment_index ?? 0,
+      source_file_key: row.source_file_key ?? null,
+      metadata_json: row.metadata_json ?? null,
+      embedding_text: row.embedding_text ?? null,
+      indexed_at: row.indexed_at ?? null,
+    } as unknown as Record<string, import("node:sqlite").SQLInputValue>);
 }
 
 export function getSession(dbPath: string, sessionId: string): SessionRow | undefined {
@@ -392,9 +453,122 @@ export function getAllSessions(dbPath: string): SessionRow[] {
   return (
     getDb(dbPath)
       .prepare(
-        `SELECT session_id, adapter_id, project_path, git_branch, started_at, ended_at, slug, raw_path, intent, penalty_weight
+        `SELECT session_id, adapter_id, project_path, git_branch, started_at, ended_at, slug, raw_path, intent, penalty_weight,
+                transcript_ref, segment_index, source_file_key, metadata_json, embedding_text, indexed_at
        FROM sessions ORDER BY started_at DESC`,
       )
       .all() as unknown as SessionRow[]
   );
+}
+
+export function getSessionBySourceFileKey(dbPath: string, sourceFileKey: string): SessionRow | undefined {
+  return getDb(dbPath)
+    .prepare(`SELECT * FROM sessions WHERE source_file_key = $source_file_key`)
+    .get({ source_file_key: sourceFileKey }) as SessionRow | undefined;
+}
+
+export interface ArchiveRecordRow {
+  id: number;
+  adapter_id: string;
+  source_key: string;
+  archived_at: number;
+  archive_path: string;
+  trigger: string;
+}
+
+export function upsertArchiveRecord(
+  dbPath: string,
+  row: Omit<ArchiveRecordRow, "id">,
+): void {
+  getDb(dbPath)
+    .prepare(
+      `INSERT INTO archive_records (adapter_id, source_key, archived_at, archive_path, trigger)
+       VALUES ($adapter_id, $source_key, $archived_at, $archive_path, $trigger)
+       ON CONFLICT(adapter_id, source_key) DO UPDATE SET
+         archived_at=excluded.archived_at, archive_path=excluded.archive_path, trigger=excluded.trigger`,
+    )
+    .run(row as unknown as Record<string, import("node:sqlite").SQLInputValue>);
+}
+
+export function getArchiveRecord(
+  dbPath: string,
+  adapterId: string,
+  sourceKey: string,
+): ArchiveRecordRow | undefined {
+  return getDb(dbPath)
+    .prepare(`SELECT * FROM archive_records WHERE adapter_id = $adapter_id AND source_key = $source_key`)
+    .get({ adapter_id: adapterId, source_key: sourceKey }) as ArchiveRecordRow | undefined;
+}
+
+export interface SessionAttemptRow {
+  session_id: string;
+  attempt_index: number;
+  commit_sha: string;
+  outcome: string;
+  linked_at: number;
+}
+
+export function upsertSessionAttempt(dbPath: string, row: SessionAttemptRow): void {
+  getDb(dbPath)
+    .prepare(
+      `INSERT INTO session_attempts (session_id, attempt_index, commit_sha, outcome, linked_at)
+       VALUES ($session_id, $attempt_index, $commit_sha, $outcome, $linked_at)
+       ON CONFLICT(session_id, attempt_index) DO UPDATE SET
+         commit_sha=excluded.commit_sha, outcome=excluded.outcome, linked_at=excluded.linked_at`,
+    )
+    .run(row as unknown as Record<string, import("node:sqlite").SQLInputValue>);
+}
+
+export function getSessionAttempts(dbPath: string, sessionId: string): SessionAttemptRow[] {
+  return getDb(dbPath)
+    .prepare(
+      `SELECT session_id, attempt_index, commit_sha, outcome, linked_at FROM session_attempts
+       WHERE session_id = $session_id ORDER BY attempt_index ASC`,
+    )
+    .all({ session_id: sessionId }) as unknown as SessionAttemptRow[];
+}
+
+export function getIndexState(dbPath: string, key: string): string | undefined {
+  const row = getDb(dbPath)
+    .prepare(`SELECT value FROM index_state WHERE key = $key`)
+    .get({ key }) as { value: string } | undefined;
+  return row?.value;
+}
+
+export function setIndexState(dbPath: string, key: string, value: string): void {
+  getDb(dbPath)
+    .prepare(
+      `INSERT INTO index_state (key, value) VALUES ($key, $value)
+       ON CONFLICT(key) DO UPDATE SET value=excluded.value`,
+    )
+    .run({ key, value });
+}
+
+export function querySessions(
+  dbPath: string,
+  filter: { adapter_id?: string; outcome?: string },
+): SessionRow[] {
+  const conditions: string[] = [];
+  const params: Record<string, import("node:sqlite").SQLInputValue> = {};
+  if (filter.adapter_id) {
+    conditions.push("s.adapter_id = $adapter_id");
+    params.adapter_id = filter.adapter_id;
+  }
+  if (filter.outcome) {
+    conditions.push(`EXISTS (
+      SELECT 1 FROM session_commit_links scl
+      JOIN commit_outcomes co ON co.sha = scl.sha
+      WHERE scl.session_id = s.session_id AND co.outcome = $outcome
+    )`);
+    params.outcome = filter.outcome;
+  }
+  const where = conditions.length ? `WHERE ${conditions.join(" AND ")}` : "";
+  return getDb(dbPath)
+    .prepare(
+      `SELECT s.session_id, s.adapter_id, s.project_path, s.git_branch, s.started_at, s.ended_at, s.slug, s.raw_path,
+              s.intent, s.penalty_weight, s.transcript_ref, s.segment_index, s.source_file_key, s.metadata_json,
+              s.embedding_text, s.indexed_at
+       FROM sessions s ${where} ORDER BY s.started_at DESC`,
+    )
+    .all(params) as unknown as SessionRow[];
 }

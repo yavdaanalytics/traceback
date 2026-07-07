@@ -1,0 +1,3 @@
+{"type":"user","uuid":"u1","parentUuid":null,"timestamp":"2025-01-01T10:00:00.000Z","cwd":"c:/source/fixture","gitBranch":"main","slug":"gap-test","sessionId":"fixture-session","message":{"role":"user","content":[{"type":"text","text":"First question about OAuth token refresh"}]}}
+{"type":"assistant","uuid":"a1","parentUuid":"u1","timestamp":"2025-01-01T10:01:00.000Z","cwd":"c:/source/fixture","sessionId":"fixture-session","message":{"role":"assistant","content":[{"type":"text","text":"Looking into the refresh loop"}]}}
+{"type":"user","uuid":"u2","parentUuid":"a1","timestamp":"2025-01-01T11:00:00.000Z","cwd":"c:/source/fixture","sessionId":"fixture-session","message":{"role":"user","content":[{"type":"text","text":"Follow up after long gap"}]}}

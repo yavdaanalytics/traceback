@@ -10,7 +10,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { insertToolInvocation, queryInvocations } from "../dist/storage/sqlite.js";
-import { upsertTurnEmbeddings, searchSimilarTurns } from "../dist/storage/lancedb.js";
+import { upsertTurnEmbeddings, searchSimilarTurns, upsertCommitEmbeddings, searchSimilarCommits } from "../dist/storage/lancedb.js";
 import { embedText } from "../dist/embedding/embedder.js";
 
 function percentile(sorted, p) {
@@ -27,6 +27,8 @@ const SLA_BUDGETS = {
   "lancedb-search-1k": { p95: 100, p99: 150 }, // ms for 1k-row search
   "lancedb-search-5k": { p95: 150, p99: 200 }, // ms for 5k-row search
   "lancedb-search-10k": { p95: 150, p99: 200 }, // ms for 10k-row search
+  "lancedb-search-cosine-1k": { p95: 100, p99: 150 },
+  "commit-embeddings-search": { p95: 150, p99: 200 },
 };
 
 const violations = [];
@@ -114,7 +116,7 @@ async function benchLanceDb(dataDir, count) {
     vector: baseVector.map((v, j) => v + (((i * 31 + j) % 7) - 3) * 1e-4),
     project_path: "/bench-repo",
     timestamp: Date.now(),
-    kind: "turn_summary",
+    kind: "embedding_text",
   }));
   await upsertTurnEmbeddings(dataDir, rows);
   console.log(`lancedb seed (n=${count}): ${(performance.now() - t0seed).toFixed(1)}ms`);
@@ -127,7 +129,26 @@ async function benchLanceDb(dataDir, count) {
     searchTimes.push(performance.now() - t0);
   }
   const scaleLabel = count === 1_000 ? "1k" : count === 5_000 ? "5k" : "10k";
-  summarize(`lancedb-search-${scaleLabel} (top_k=10, ${count} rows, 20 runs)`, searchTimes);
+  summarize(`lancedb-search-cosine-${scaleLabel} (top_k=10, ${count} rows, 20 runs)`, searchTimes);
+
+  const commitRows = Array.from({ length: Math.min(count, 500) }, (_, i) => ({
+    id: `bench-commit:${i}`,
+    commit_sha: `sha-${i}`,
+    session_id: "",
+    repo_path: "/bench-repo",
+    message: `bench commit message ${i}`,
+    files_changed_summary: `file${i}.ts`,
+    vector: baseVector.map((v, j) => v + (((i * 17 + j) % 5) - 2) * 1e-4),
+    timestamp: Date.now(),
+  }));
+  await upsertCommitEmbeddings(dataDir, commitRows);
+  const commitSearchTimes = [];
+  for (let i = 0; i < 10; i++) {
+    const t0 = performance.now();
+    await searchSimilarCommits(dataDir, query, 5);
+    commitSearchTimes.push(performance.now() - t0);
+  }
+  summarize(`commit-embeddings-search (${commitRows.length} rows, 10 runs)`, commitSearchTimes);
 }
 
 async function main() {
