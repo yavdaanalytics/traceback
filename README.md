@@ -187,10 +187,10 @@ Done. The setup script automatically:
 |-----|---------------------|
 | **Claude Code** | Native `mcp_tool` hooks on `UserPromptSubmit` + `PreToolUse` Read (`~/.claude/settings.json`) |
 | **VS Code / Copilot / JetBrains Copilot** | Command hooks on `UserPromptSubmit` + `PreToolUse` Read (`.github/hooks/traceback-warmstart.json`) |
-| **Cursor** | Hybrid: `beforeReadFile` hook (`.cursor/hooks.json`) + always-on rule (`.cursor/rules/traceback.mdc`) instructing the agent to call `search_with_fallback` per prompt |
+| **Cursor** | Hybrid: `beforeReadFile` hook + `preToolUse` Grep/Glob gate + always-on rule (`.cursor/rules/traceback.mdc`) — agent must call `search_with_fallback` before repo search |
 | **Windsurf** | `pre_user_prompt` command hook (`.windsurf/hooks.json`) when `.windsurf/` is present |
 
-Cursor cannot inject per-prompt context via hooks today (`beforeSubmitPrompt` is block-only); the hybrid rule + read hook is the reliable path.
+Cursor cannot inject per-prompt context via `beforeSubmitPrompt` (block-only). Enforcement uses the always-on rule plus a `preToolUse` hook that denies `Grep`/`Glob` until `search_with_fallback` runs (`afterMCPExecution` marks the turn).
 
 ### Manual Trigger
 If you need to re-run setup:

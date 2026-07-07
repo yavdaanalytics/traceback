@@ -12,14 +12,16 @@ function sortTurnsByTimestamp(turns: Turn[]): Turn[] {
 }
 
 /** Split ordered turns into segments separated by time gaps. */
-export function segmentTurns(turns: Turn[], gapMs: number = getSessionGapMs()): Turn[][] {
+export function segmentTurns(turns: Turn[], gapMs?: number): Turn[][] {
+  // Default params do not apply when callers pass `undefined` explicitly (e.g. optional config fields).
+  const resolvedGapMs = gapMs ?? getSessionGapMs();
   if (turns.length === 0) return [];
   const sorted = sortTurnsByTimestamp(turns);
   const segments: Turn[][] = [[sorted[0]]];
   for (let i = 1; i < sorted.length; i++) {
     const prev = sorted[i - 1];
     const cur = sorted[i];
-    if (cur.timestamp - prev.timestamp > gapMs) {
+    if (cur.timestamp - prev.timestamp > resolvedGapMs) {
       segments.push([cur]);
     } else {
       segments[segments.length - 1].push(cur);

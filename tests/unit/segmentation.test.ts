@@ -16,6 +16,13 @@ describe("segmentation", () => {
     expect(segments[1]).toHaveLength(1);
   });
 
+  it("uses default gap when gapMs is explicitly undefined", () => {
+    const segments = segmentTurns(turns, undefined);
+    expect(segments).toHaveLength(2);
+    expect(segments[0]).toHaveLength(2);
+    expect(segments[1]).toHaveLength(1);
+  });
+
   it("assigns synthetic session ids per segment", () => {
     const session: ParsedSession = {
       sessionId: "base",
@@ -30,5 +37,22 @@ describe("segmentation", () => {
     expect(out[0].sessionId).toBe("base:seg-0");
     expect(out[1].sessionId).toBe("base:seg-1");
     expect(out[0].transcriptRef).toBe("/raw/base.jsonl");
+  });
+
+  it("segments with default gap when segmentSession gapMs is explicitly undefined", () => {
+    const session: ParsedSession = {
+      sessionId: "base",
+      adapterId: "claude-code",
+      projectPath: "/repo",
+      startedAt: 0,
+      endedAt: DEFAULT_SESSION_GAP_MS + 120_000,
+      turns,
+    };
+    const out = segmentSession(session, {
+      transcriptRef: "/raw/base.jsonl",
+      sourceFileKey: "claude-code:base",
+      gapMs: undefined,
+    });
+    expect(out).toHaveLength(2);
   });
 });

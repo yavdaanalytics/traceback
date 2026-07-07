@@ -8,7 +8,8 @@ import { getSession, getSessionBySourceFileKey, upsertSession } from "../storage
 import { normalizePath } from "../util/paths.js";
 import { digestSession, extractIntent } from "./summarizer.js";
 import { segmentSession } from "./segmentation.js";
-import { deriveSessionAttempts } from "../git/commit-correlation.js";
+import { buildSessionLinkageMetadata, metadataNeedsLinkageEnrichment } from "./session-files.js";
+import { deriveSessionAttempts, linkValidatedTranscriptCommits } from "../git/commit-correlation.js";
 
 export interface IndexConfig {
   dataDir: string;
@@ -41,6 +42,7 @@ export async function ingestStaleSessions(
         !existing ||
         (existing.ended_at ?? 0) < ref.lastModified ||
         !existing.embedding_text ||
+        metadataNeedsLinkageEnrichment(existing.metadata_json) ||
         !(await hasEmbeddingTextRow(config.dataDir, existing.session_id));
 
       if (!needsReindex) {
@@ -83,6 +85,8 @@ async function ingestOneSegment(
   const existingIntentVal = existingIntent(config, session.sessionId);
   const intent = existingIntentVal ?? extractIntent(session) ?? null;
   const embeddingText = digestSession(session);
+  const repoPath = config.repoPath ?? session.projectPath;
+  const linkageMeta = buildSessionLinkageMetadata(session, session.metadata, repoPath);
 
   if (embeddingText.trim().length > 0) {
     const vector = await embedText(embeddingText);
@@ -114,14 +118,15 @@ async function ingestOneSegment(
     transcript_ref: session.transcriptRef,
     segment_index: session.segmentIndex,
     source_file_key: session.sourceFileKey,
-    metadata_json: session.metadata ? JSON.stringify(session.metadata) : null,
+    metadata_json: JSON.stringify(linkageMeta),
     embedding_text: embeddingText,
     indexed_at: now,
   });
 
-  if (config.repoPath) {
+  if (repoPath) {
     try {
-      deriveSessionAttempts(config.sqlitePath, config.repoPath, session.sessionId);
+      linkValidatedTranscriptCommits(config.sqlitePath, repoPath, session.sessionId, linkageMeta.commitHashes);
+      deriveSessionAttempts(config.sqlitePath, repoPath, session.sessionId);
     } catch {
       // non-blocking
     }

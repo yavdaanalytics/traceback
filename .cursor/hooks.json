@@ -6,6 +6,20 @@
         "command": "node \"C:/source/traceback/dist/cli/warm-start.js\" --format cursor-read --repo-path \"C:/source/traceback\"",
         "timeout": 90
       }
+    ],
+    "preToolUse": [
+      {
+        "command": "node \"C:/source/traceback/dist/cli/warm-start.js\" --format cursor-gate --repo-path \"C:/source/traceback\"",
+        "matcher": "Grep|Glob",
+        "timeout": 10
+      }
+    ],
+    "afterMCPExecution": [
+      {
+        "command": "node \"C:/source/traceback/dist/cli/warm-start.js\" --format cursor-mcp-mark --repo-path \"C:/source/traceback\"",
+        "matcher": "search_with_fallback",
+        "timeout": 10
+      }
     ]
   }
 }

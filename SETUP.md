@@ -18,7 +18,7 @@ This installs:
 |-----|-------------------------|----------|
 | Claude Code | `~/.claude/settings.json` | Native MCP hooks on every prompt and before file reads |
 | VS Code / Copilot / JetBrains Copilot | `.github/hooks/traceback-warmstart.json` | Injects `search_with_fallback` context on prompt submit and before Read |
-| Cursor | `.cursor/hooks.json` + `.cursor/rules/traceback.mdc` | Scopes on file read; rule instructs agent to call `search_with_fallback` per prompt |
+| Cursor | `.cursor/hooks.json` + `.cursor/rules/traceback.mdc` | `beforeReadFile` injects scoped context; `preToolUse` blocks `Grep`/`Glob` until `search_with_fallback` runs; rule mandates MCP as first tool call |
 | Windsurf | `.windsurf/hooks.json` + `.windsurf/mcp.json` | `pre_user_prompt` hook runs warm-start before each prompt |
 
 Manual warm-start CLI: `npx traceback-warmstart --format plain --query "your question" --repo-path .`
@@ -28,8 +28,26 @@ Manual warm-start CLI: `npx traceback-warmstart --format plain --query "your que
 Once set up, traceback is available as an MCP server in:
 - **Claude Code** — through `.mcp.json`
 - **VS Code / GitHub Copilot** — through `.vscode/mcp.json`
-- **Cursor** — through `.cursor/mcp.json`
+- **Cursor** — through `.cursor/mcp.json` and/or `~/.cursor/mcp.json` (global)
 - **Windsurf** — through `.windsurf/mcp.json` (when present)
+
+### MCP server routing (`call_server_id`)
+
+Hosts use **two different names** for traceback:
+
+| Context | Name | Example |
+|---------|------|---------|
+| `mcp.json` config key | always `traceback` | `"mcpServers": { "traceback": { ... } }` |
+| Cursor `CallMcpTool` / tool routing id | config key, or `user-` + key for **global** Cursor installs | `user-traceback` |
+| Claude Code native `mcp_tool` hooks | config key | `server: "traceback"` |
+
+`npx traceback-setup` writes:
+
+- `~/.traceback/install.json` — per-host `call_server_id` records
+- `TRACEBACK_MCP_SERVER_ID` in each MCP server `env` block
+- `.cursor/rules/traceback.mdc` — always-on rule with the resolved Cursor `call_server_id`
+
+If an agent call fails with “server does not exist”, call **`get_connection_info`** first (on any listed traceback server) or check the `mcps/` tool descriptors for the folder containing `search_with_fallback`.
 
 ### Primary tool: `search_with_fallback`
 
@@ -46,6 +64,7 @@ Response fields: `mode`, `session_matches`, `git_scope`, `grep_result`, `refinem
 
 ### Other MCP tools (granular / follow-up)
 
+- `get_connection_info` — resolve `call_server_id` for CallMcpTool routing
 - `find_similar_sessions` / `search_dev_history` — L1 only (with optional filters)
 - `git_history_scope` — L2 only
 - `search_sessions_grep` / `grep_codebase` — L3 grep
@@ -114,7 +133,38 @@ Session data and telemetry live in:
 
 Both are auto-created on first session ingestion.
 
-## 7. Troubleshooting
+## 7. Phase 1 verification (real ~/.claude history)
+
+After `npm run build` and `npx traceback-setup`:
+
+1. Install global hook once: `traceback-install-global-hook`
+2. Make at least one commit in the repo while a Claude Code session is active (or re-ingest via MCP `ingest_session`)
+3. Run the opt-in E2E script:
+
+```sh
+TRACEBACK_E2E=1 node scripts/phase1-e2e.mjs --repo c:/source/traceback --query "your known topic"
+```
+
+Or verify manually via MCP:
+- `ingest_session` with `project_path` set to your repo path
+- `search_dev_history` with a query you know matches past work
+- Confirm the response includes `confidence`, `outcome`, `outcome_evidence`, and `linkedCommits[].sha`
+
+### Automated prompt-capture tests (CI-safe)
+
+Runs a synthetic golden prompt through Claude fixture JSONL, git commit, hook linkage, ingest, recall, warm-start hooks, and MCP stdio — no live IDE required:
+
+```sh
+npm run test:prompt-capture
+```
+
+Covers:
+- `tests/e2e/prompt-capture.test.ts` — hook → ingest → `search_dev_history`
+- `tests/e2e/prompt-capture-mcp.test.ts` — MCP `ingest_session` / `search_dev_history` / `search_with_fallback`
+- `tests/integration/warm-start-prompt.test.ts` — VS Code / Cursor / Windsurf hook stdin → real `searchWithFallback`
+- `tests/unit/prompt-capture-fixture.test.ts` — fixture path encoding + adapter discovery
+
+## 8. Troubleshooting
 
 **Dashboard shows no data?**
 - Make sure at least one session has been captured (commit something after setup).
