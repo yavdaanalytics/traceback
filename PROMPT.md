@@ -25,6 +25,27 @@ handed a small, precise territory instead of the whole repo).
 
 ## Retrieval funnel
 
+Two related orderings:
+
+### `search_with_fallback` (implemented — single MCP call)
+
+This is the canonical warm-start path (`src/mcp/fallback.ts`):
+
+```
+L1  find_similar_sessions     (LanceDB session cosine — optional anchor)
+    → if high-confidence: files from session→commit links (SQLite)
+L2  git_history_scope         (git log -S pickaxe + commit intent) — ALWAYS
+    → if scope empty: files from matching commits
+L3  search_sessions_grep      (scoped grep → widen to git files → full repo) — ALWAYS
+L4  ast_symbol_search / diff_search / keyword_search (refinements)
+```
+
+L1 may return zero hits; L2–L3 still run. L3 never hard-fails on empty scope — it widens to full-repo grep.
+
+### Manual agent pipeline (step individual tools)
+
+When the agent calls tools one at a time instead of `search_with_fallback`:
+
 ```
 semantic (find_similar_sessions)
    -> candidate sessions/episodes
@@ -34,6 +55,8 @@ semantic (find_similar_sessions)
    -> blame_current          (map the historical match to where it lives in HEAD today)
    -> current code snippet returned to the agent
 ```
+
+Note: the manual pipeline runs **AST before grep**; `search_with_fallback` runs **grep (L3) before AST (L4)**. Both are valid — the orchestrated tool optimizes for fast text hits first, then structural refinements.
 
 Each stage is cheap/fuzzy first, precise/expensive last. Vector search never has to be the final
 authority — it only narrows scope; grep/AST/blame supply ground truth. If a narrow scope turns up
@@ -109,28 +132,14 @@ interface ToolCall {
 - `slug` is a human-readable session nickname, useful as a display name.
 - Sidechain/subagent turns live in a sibling `<sessionId>/subagents/agent-*.jsonl`.
 
-### Cursor adapter (v1, stub — schema unverified)
+### Cursor adapter (v1, fixture-tested)
 
-Community knowledge (not verified against a live install) suggests chat/composer history lives in
-the Cursor desktop app's `state.vscdb` (SQLite) under
-`%APPDATA%\Cursor\User\workspaceStorage\<hash>\state.vscdb`, in an `ItemTable` with keys like
-`workbench.panel.aichat.view.aichat.chatdata` / `composer.composerData`, plus a global
-`%APPDATA%\Cursor\User\globalStorage\state.vscdb`. Ship `isAvailable()` returning `false` unless
-that path exists, `listSessions`/`loadSession` returning empty arrays rather than throwing.
-**Verify against a real Cursor install before relying on this.**
+Reads `state.vscdb` from workspace/global storage via `TRACEBACK_CURSOR_STORAGE` override for tests.
+Live-schema validation requires a real Cursor install (skipped in CI when absent).
 
-### Copilot adapter (v1, stub — schema unverified)
+### Copilot adapter (v1, fixture-tested)
 
-Two candidate sources, likely both needed as separate adapters eventually:
-
-- Copilot CLI: `~/.copilot/session-store.db` (+ `-shm`/`-wal`, SQLite WAL mode) — path is real,
-  internal table schema not inspected.
-- VS Code Copilot Chat extension: `%APPDATA%\Code\User\workspaceStorage\<hash>\chatSessions\*.json`
-  and/or `%APPDATA%\Code\User\globalStorage\github.copilot-chat\...` — documented community
-  knowledge, not verified on any specific machine.
-
-Same stub contract as Cursor: `isAvailable()` gated on path existence, empty results instead of
-crashing the pipeline.
+Reads `chatSessions/*.json` and optional `state.vscdb` keys via `TRACEBACK_COPILOT_STORAGE` override.
 
 ## Storage: LanceDB (vectors) + SQLite (graph/relational)
 
@@ -240,7 +249,10 @@ index. Never construct this with shell string interpolation — see security not
 
 ## MCP tool surface
 
-- `find_similar_sessions(query, top_k?, project_path?)` — cosine search over turn/session
+- `search_with_fallback(query, pattern?, project_path?, repo_path?)` — **primary warm-start tool**;
+  runs the 4-layer funnel (L1 session cosine → L2 git pickaxe/intent → L3 scoped/widened grep →
+  L4 ast/diff/keyword refinements) in one call. See **Retrieval funnel** above.
+- `find_similar_sessions(query, top_k?, project_path?)` — L1 only: cosine search over turn/session
   embeddings; primary "which past session did X" recall.
 - `ast_search(pattern, files, language?)` — structural pattern match scoped to candidate files
   from a prior semantic hit, via a proven AST-grep tool (`ast-grep` CLI) rather than a hand-rolled

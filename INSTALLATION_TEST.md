@@ -5,9 +5,11 @@ Traceback setup automation has been fully implemented and tested. The installati
 
 1. ✅ Sets up global git hooks at `~/.traceback/hooks`
 2. ✅ Configures Claude Code hooks in `~/.claude/settings.json`
-3. ✅ Works across all three platforms: Claude Code, Cursor, and VS Code
-4. ✅ Is fully idempotent (safe to run multiple times)
-5. ✅ Preserves existing user hooks
+3. ✅ Configures Cursor hooks (`.cursor/hooks.json` + `.cursor/rules/traceback.mdc`) when `.cursor/mcp.json` exists
+4. ✅ Configures VS Code / Copilot hooks (`.github/hooks/traceback-warmstart.json`) when `.vscode/mcp.json` exists
+5. ✅ Configures Windsurf hooks (`.windsurf/hooks.json`) when `.windsurf/` exists
+6. ✅ Is fully idempotent (safe to run multiple times)
+7. ✅ Preserves existing user hooks
 
 ## Test Results
 
@@ -63,20 +65,32 @@ Ran `npm run build && node dist/cli/setup.js` with clean state:
 
 ## Unit Test Coverage
 
-File: `tests/unit/setup.test.ts`
-- ✅ 17/17 tests passing
+Files:
+- `tests/unit/setup-hooks.test.ts` — Cursor, VS Code, Windsurf hook installers (idempotency, preservation)
+- `tests/unit/warm-start.test.ts` — warm-start CLI formatting and per-IDE stdout shapes
 
-Key test cases added:
-- `setupClaudeCodeHooks > is idempotent - running twice does not duplicate hooks`
-- `setupClaudeCodeHooks > preserves existing non-traceback hooks`
-- `setupClaudeCodeHooks > adds hooks to fresh settings.json`
+Key test cases:
+- `setupCursorHooks > is idempotent on second run`
+- `setupCursorHooks > preserves unrelated cursor hooks`
+- `setupVsCodeHooks > writes UserPromptSubmit and PreToolUse hooks`
+- `runWarmStart > returns vscode / cursor-read / windsurf output formats`
 
 ## What Gets Installed
 
 ### Global Git Hooks (`~/.traceback/hooks/`)
 - `post-commit`: Runs on every commit to ingest session context into traceback's vector DB
 - Runs automatically for all repositories on this machine
-- Works identically on Claude Code, Cursor, and VS Code
+
+### Warm-start funnel (`search_with_fallback`)
+
+| Layer | Tool | Always runs? |
+|-------|------|--------------|
+| L1 | `find_similar_sessions` | Attempted; may be empty |
+| L2 | `git_history_scope` | Yes |
+| L3 | `search_sessions_grep` (scoped → widened) | Yes |
+| L4 | ast / diff / keyword refinements | Keyword always |
+
+See `README.md` and `src/mcp/fallback.ts` for implementation details.
 
 ### Claude Code Hooks (`~/.claude/settings.json`)
 
@@ -113,29 +127,34 @@ Key test cases added:
 
 ## Cross-Platform Support
 
-The implementation works identically across all three platforms:
+| Platform | MCP Config | Global Git Hooks | Warm-start hooks | Status |
+|----------|-----------|------------------|------------------|--------|
+| Claude Code | `.mcp.json` | `~/.traceback/hooks` | `~/.claude/settings.json` (`mcp_tool` on UserPromptSubmit + PreToolUse) | ✅ |
+| Cursor | `.cursor/mcp.json` | `~/.traceback/hooks` | `.cursor/hooks.json` (beforeReadFile) + `.cursor/rules/traceback.mdc` | ✅ hybrid |
+| VS Code / Copilot | `.vscode/mcp.json` | `~/.traceback/hooks` | `.github/hooks/traceback-warmstart.json` (UserPromptSubmit + PreToolUse) | ✅ |
+| JetBrains Copilot | `.vscode/mcp.json` or repo hooks | `~/.traceback/hooks` | Same `.github/hooks/` (camelCase `userPromptSubmitted` supported by warm-start CLI) | ✅ |
+| Windsurf | `.windsurf/mcp.json` | `~/.traceback/hooks` | `.windsurf/hooks.json` (`pre_user_prompt`) | ✅ |
 
-| Platform | MCP Config | Global Hooks | Claude Hooks | Status |
-|----------|-----------|-------------|-------------|--------|
-| Claude Code | `.mcp.json` | `~/.traceback/hooks` | `~/.claude/settings.json` | ✅ Works |
-| Cursor | `.cursor/mcp.json` | `~/.traceback/hooks` | `~/.claude/settings.json` | ✅ Works |
-| VS Code / Copilot | `.vscode/mcp.json` | `~/.traceback/hooks` | `~/.claude/settings.json` | ✅ Works |
-
-Note: Global git hooks and Claude Code settings are user-level (not project-level), so they apply uniformly across all tools using the same machine user account.
+Note: Global git hooks are user-level. IDE warm-start hooks are project-level (written into the repo by `traceback-setup`) except Claude Code, which uses user-level `~/.claude/settings.json`.
 
 ## Files Modified
 
 1. **src/cli/setup.ts**
-   - Added `setupGlobalHooks()` function
-   - Added `setupClaudeCodeHooks()` function with idempotency logic
-   - Updated `main()` to orchestrate setup with user-friendly prompts
-   - Integrated global hook installation
+   - Added `setupCursorHooks()`, `setupVsCodeHooks()`, `setupWindsurfHooks()`, `mergeWindsurfMcpConfig()`
+   - Existing `setupGlobalHooks()`, `setupClaudeCodeHooks()`
+   - Updated `main()` to orchestrate all IDE installers
 
-2. **src/cli/install-hook.ts**
+2. **src/cli/warm-start.ts** / **src/cli/warm-start-format.ts**
+   - Shared CLI invoked by IDE command hooks; calls `searchWithFallback` and formats per-host stdout
+
+3. **src/cli/install-hook.ts**
    - Added `installGlobalHook()` function to install post-commit hook in global directory
    - Supports both per-repo and global hook installation
 
-3. **tests/unit/setup.test.ts**
+3. **tests/unit/setup-hooks.test.ts** / **tests/unit/warm-start.test.ts**
+   - Hook installer idempotency and warm-start output formatting
+
+4. **tests/unit/setup.test.ts**
    - Added comprehensive test coverage for new hook setup functions
    - Tests idempotency, hook preservation, and edge cases
    - All tests passing

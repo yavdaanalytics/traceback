@@ -1,0 +1,11 @@
+{
+  "sessionId": "copilot-fixture-1",
+  "creationDate": 1700000000000,
+  "lastMessageDate": 1700000060000,
+  "requests": [
+    {
+      "message": { "text": "How do I fix a flaky Playwright test?" },
+      "response": [{ "value": "Ensure navigation is awaited before assertions." }]
+    }
+  ]
+}

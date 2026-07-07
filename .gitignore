@@ -2,13 +2,10 @@ node_modules/
 dist/
 data/
 local_cache/
-ROADMAP.md
 *.log
 .cursor/mcp.json
 
-# Local-only test files (security, contract, and new unit/integration tests)
-tests/security/
-tests/contract/
+# Local-only test files (optional legacy exclusions)
 tests/unit/indexer.test.ts
 tests/unit/install-hook.test.ts
 tests/unit/lineage.test.ts

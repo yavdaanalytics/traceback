@@ -9,22 +9,53 @@ npx traceback-setup
 
 This installs:
 - **Git post-commit hook** — automatically catalogs sessions at each commit
-- **MCP server registration** — wires traceback into Claude Code, VS Code, and Cursor (for whichever IDEs have config files present in your repo)
+- **MCP server registration** — wires traceback into Claude Code, VS Code, Cursor, and Windsurf (for whichever IDEs have config files present in your repo)
+- **Per-IDE warm-start hooks** — automatic context scoping where each host's hook API allows it (see below)
+
+### Warm-start by IDE
+
+| IDE | Config written by setup | Behavior |
+|-----|-------------------------|----------|
+| Claude Code | `~/.claude/settings.json` | Native MCP hooks on every prompt and before file reads |
+| VS Code / Copilot / JetBrains Copilot | `.github/hooks/traceback-warmstart.json` | Injects `search_with_fallback` context on prompt submit and before Read |
+| Cursor | `.cursor/hooks.json` + `.cursor/rules/traceback.mdc` | Scopes on file read; rule instructs agent to call `search_with_fallback` per prompt |
+| Windsurf | `.windsurf/hooks.json` + `.windsurf/mcp.json` | `pre_user_prompt` hook runs warm-start before each prompt |
+
+Manual warm-start CLI: `npx traceback-warmstart --format plain --query "your question" --repo-path .`
 
 ## 2. Using traceback in Your IDE
 
 Once set up, traceback is available as an MCP server in:
 - **Claude Code** — through `.mcp.json`
-- **VS Code with Claude extension** — through `.vscode/mcp.json`
+- **VS Code / GitHub Copilot** — through `.vscode/mcp.json`
 - **Cursor** — through `.cursor/mcp.json`
+- **Windsurf** — through `.windsurf/mcp.json` (when present)
 
-Tools available:
-- `find_similar_sessions` — semantic search over past sessions (warm-start funnel)
-- `search_sessions_grep` — grep within narrowed scope
-- `ast_search` — structural code search within scope
-- `get_session_lineage` — trace commits linked to a session
-- `get_efficiency_report` — view telemetry/observability metrics
-- `submit_feedback` — down-weight sessions that gave wrong results
+### Primary tool: `search_with_fallback`
+
+Call this first for warm-start. It runs the 4-layer funnel in one response:
+
+| Layer | What it does | Always runs? |
+|-------|----------------|--------------|
+| **L1** | `find_similar_sessions` — LanceDB cosine recall over past sessions | Attempted; may be empty |
+| **L2** | `git_history_scope` — `git log -S` pickaxe + commit intent embeddings | **Yes** |
+| **L3** | `search_sessions_grep` — scoped grep, widens to git files then full repo | **Yes** |
+| **L4** | `ast_symbol_search`, `diff_search`, `keyword_search` refinements | Keyword always |
+
+Response fields: `mode`, `session_matches`, `git_scope`, `grep_result`, `refinements`, `layers`.
+
+### Other MCP tools (granular / follow-up)
+
+- `find_similar_sessions` / `search_dev_history` — L1 only (with optional filters)
+- `git_history_scope` — L2 only
+- `search_sessions_grep` / `grep_codebase` — L3 grep
+- `ast_search` / `ast_symbol_search` / `diff_search` / `keyword_search` — L4-style precision
+- `blame_current` — map a historical match to HEAD
+- `get_session_detail` / `get_session_lineage` / `get_change_graph` / `get_commit_context` — graph walks
+- `ingest_session` / `list_adapters` — indexing introspection
+- `get_efficiency_report` — telemetry
+- `submit_feedback` — down-weight wrong session matches
+- `link_session_commit` / `tag_outcome` — manual graph corrections
 
 ## 3. Observability Dashboard
 
@@ -48,25 +79,32 @@ Data updates live from `data/traceback.db` every 5 seconds.
 
 ```sh
 npm run build      # compile
-npm test           # run 61 tests (unit/integration/e2e/regression/evals)
+npm test           # full test suite (unit/integration/e2e/regression/evals/security/contracts)
 npm run bench      # optional: latency/throughput at scale
 ```
 
 ## 5. Architecture at a Glance
 
 ```
-IDE (Claude Code, Cursor, VS Code)
+IDE (Claude Code, Cursor, VS Code, Windsurf)
+  │
+  ├─► Warm-start hooks (per IDE — see table in §1)
+  │    └─► traceback-warmstart CLI or native mcp_tool hooks
+  │         └─► search_with_fallback (4-layer funnel)
   │
   └─► MCP server (dist/mcp/index.js)
        │
-       ├─► find_similar_sessions (semantic recall via LanceDB)
-       │    └─► search_sessions_grep (scope narrowing via git)
-       │         └─► ast_search, git grep (precision search)
+       ├─► L1 find_similar_sessions     (LanceDB session vectors)
+       ├─► L2 git_history_scope         (git pickaxe + commit intent)  ← always
+       ├─► L3 search_sessions_grep      (scoped → widened grep)        ← always
+       ├─► L4 ast / diff / keyword      (refinements)
        │
-       └─► Data layer (auto-indexed by git hook)
-            ├─► LanceDB (session embeddings for ANN)
-            └─► SQLite (relational graph: commits, files, telemetry)
+       └─► Data layer (auto-indexed by global post-commit hook)
+            ├─► LanceDB (data/lancedb/) — turn + commit embeddings
+            └─► SQLite (data/traceback.db) — sessions, commits, telemetry
 ```
+
+Implementation: `src/mcp/fallback.ts` (`searchWithFallback`). Individual MCP tools map to each layer for manual/agent-driven stepping.
 
 ## 6. Data Storage
 
@@ -86,8 +124,15 @@ Both are auto-created on first session ingestion.
 - Run `traceback-setup` again to regenerate the config file.
 - Check the IDE's settings to ensure MCP is enabled and config file path is correct.
 
+**Warm-start hooks not firing?**
+- **Claude Code**: check `~/.claude/settings.json` hooks and the Hooks output in Claude Code settings.
+- **VS Code / Copilot**: open Output panel → **GitHub Copilot Chat Hooks** channel; verify `.github/hooks/traceback-warmstart.json` exists.
+- **Cursor**: open **Hooks** tab in Cursor settings or the Hooks output channel; verify `.cursor/hooks.json` and `.cursor/rules/traceback.mdc`.
+- **Windsurf**: verify `.windsurf/hooks.json` contains `pre_user_prompt`.
+- First warm-start can take up to ~90s while embeddings download; hook timeout is set to 90 seconds.
+
 **Git hook not triggering?**
-- Verify `data/.git-hooks/post-commit` exists (or check `git config core.hooksPath`).
+- Verify `~/.traceback/hooks/post-commit` exists (or check `git config --global core.hooksPath`).
 - Try a manual commit: `git commit --allow-empty -m "test hook"`.
 
 See `CLAUDE.md` for developer details on testing, security invariants, and architecture.

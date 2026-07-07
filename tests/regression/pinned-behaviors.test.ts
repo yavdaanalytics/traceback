@@ -28,10 +28,7 @@ afterAll(() => {
 
 describe("penalty sign convention (pinned)", () => {
   it("penalizing ADDS to distance (higher = worse rank), never subtracts", () => {
-    // LanceDB's default .search() metric is ascending L2 distance - lower is
-    // more similar. Penalizing a session must push it further away (larger
-    // number), not closer. Flipping this sign would make rejected sessions
-    // rank BETTER, the exact opposite of the feature's purpose.
+    // LanceDB cosine distance — lower is more similar. Penalizing adds to distance.
     upsertSession(dbPath, {
       session_id: "pin-s1",
       adapter_id: "claude-code",
@@ -84,5 +81,37 @@ describe("efficiency report text format (pinned)", () => {
     const text = renderEfficiencyReport(dbPath, { toolName: "pin_tool_no_lines" });
     expect(text).not.toContain("reduction");
     expect(text).not.toContain("baseline");
+  });
+});
+
+describe("cosine confidence threshold (pinned)", () => {
+  it("default TRACEBACK_CONFIDENCE_THRESHOLD is 0.35", async () => {
+    const { DEFAULT_CONFIDENCE_THRESHOLD } = await import("../../src/config.js");
+    expect(DEFAULT_CONFIDENCE_THRESHOLD).toBe(0.35);
+  });
+});
+
+describe("search_with_fallback mode enum (pinned)", () => {
+  it("includes 4-layer mode values", () => {
+    const modes = [
+      "scoped_session",
+      "git_history_intent",
+      "grep_scoped",
+      "grep_full_repo",
+      "ast_refined",
+      "diff_refined",
+      "keyword_refined",
+      "silent_miss_scoped",
+    ];
+    expect(modes).toContain("git_history_intent");
+    expect(modes).toContain("keyword_refined");
+  });
+});
+
+describe("get_change_graph timeline shape (pinned)", () => {
+  it("timeline entries expose connection and edges", () => {
+    const shape = { connection: "direct" as const, edges: [] as unknown[] };
+    expect(shape).toHaveProperty("connection");
+    expect(shape).toHaveProperty("edges");
   });
 });

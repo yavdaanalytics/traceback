@@ -1,4 +1,6 @@
 import { execFileSync } from "node:child_process";
+import { embedText } from "../embedding/embedder.js";
+import { searchSimilarCommits } from "../storage/lancedb.js";
 
 // Pure heuristic: extract search terms from a natural-language query for git log pickaxe.
 // Order: quoted substrings, path-like tokens (/ or .), identifier-like tokens (_/camelCase/CAPS),
@@ -49,6 +51,8 @@ export function deriveSearchTerms(query: string): string[] {
   return Array.from(terms).slice(0, 5);
 }
 
+export type GitSignal = "pickaxe" | "blame" | "intent";
+
 export interface GitHistoryScopeResult {
   commit_hash: string;
   message: string;
@@ -56,6 +60,7 @@ export interface GitHistoryScopeResult {
   date: string;
   term_hits: number;
   source: "blame" | "git_history";
+  signals?: GitSignal[];
 }
 
 // Cold-start scoping via git log (pickaxe) and git blame. Returns top-N commits that
@@ -65,7 +70,7 @@ export interface GitHistoryScopeResult {
 export function gitHistoryScope(
   repoPath: string,
   terms: string[],
-  opts?: { file?: string; line?: number },
+  opts?: { file?: string; line?: number; query?: string; dataDir?: string; sqlitePath?: string },
 ): GitHistoryScopeResult[] {
   const candidates = new Map<string, { commit_hash: string; message: string; date: string; term_hits: number }>();
 
@@ -85,7 +90,7 @@ export function gitHistoryScope(
           const sha = firstLineTokens[0].replace(/^\^/, ""); // ^ prefix means boundary commit
           candidates.set(sha, {
             commit_hash: sha,
-            message: "", // will fetch via git log if this sha ranks high
+            message: "",
             date: "",
             term_hits: 0,
           });
@@ -175,9 +180,55 @@ export function gitHistoryScope(
       files_changed: filesChanged,
       date: cand.date,
       term_hits: cand.term_hits,
-      source: "git_history",
+      source: candidates.has(cand.commit_hash) && opts?.file ? "blame" : "git_history",
+      signals: [opts?.file && candidates.get(cand.commit_hash)?.term_hits === 0 ? "blame" : "pickaxe"] as GitSignal[],
     });
   }
 
   return results;
+}
+
+export async function enrichGitScopeWithIntent(
+  results: GitHistoryScopeResult[],
+  dataDir: string,
+  query: string,
+): Promise<GitHistoryScopeResult[]> {
+  const intentHits = await searchIntentCommits(dataDir, query);
+  const merged = [...results];
+  for (const hit of intentHits) {
+    const existing = merged.find((r) => r.commit_hash === hit.commit_hash);
+    if (existing) {
+      existing.signals = [...new Set([...(existing.signals ?? []), "intent"])] as GitSignal[];
+    } else {
+      merged.push(hit);
+    }
+  }
+  return merged.slice(0, 5);
+}
+
+export async function searchIntentCommits(
+  dataDir: string,
+  query: string,
+  topK = 5,
+): Promise<GitHistoryScopeResult[]> {
+  const vector = await embedText(query);
+  const commits = await searchSimilarCommits(dataDir, vector, topK);
+  return commits.map((c) => ({
+    commit_hash: c.commit_sha,
+    message: c.message,
+    files_changed: c.files_changed_summary.split(", ").filter(Boolean),
+    date: new Date(c.timestamp).toISOString(),
+    term_hits: 0,
+    source: "git_history" as const,
+    signals: ["intent"] as GitSignal[],
+  }));
+}
+
+export function gitHistoryScopeFromQuery(
+  repoPath: string,
+  query: string,
+  opts?: { file?: string; line?: number },
+): string[] {
+  const terms = deriveSearchTerms(query);
+  return terms.length ? terms : [query];
 }

@@ -10,43 +10,50 @@ traceback solves this by asking: *"has the agent worked on this kind of problem 
 
 ## Architecture: The Warm-Start Funnel
 
-traceback doesn't replace grep — it stages *before* grep:
+traceback doesn't replace grep — it **sequences** fuzzy recall before precise search. The canonical implementation is the **`search_with_fallback`** MCP tool (`src/mcp/fallback.ts`): a 4-layer funnel that always reaches git and grep even when LanceDB session recall is empty.
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
 │ Query: "jwt token expiry causing 401 errors"                    │
 └────────────────────────┬────────────────────────────────────────┘
                          │
-                    ┌────▼─────────────────────┐
-                    │ 1. SEMANTIC RECALL       │
-                    │ (embedding + ANN search) │
-                    │ "find similar sessions"  │
-                    │ ~15ms ──────────────────►│ "sess-jwt-fix from 3 weeks ago"
-                    └────┬──────────────────────┘
+              ┌──────────▼──────────┐
+              │ L1 SESSION RECALL    │  find_similar_sessions
+              │ LanceDB cosine ANN   │  (optional — can return 0 hits)
+              └──────────┬──────────┘
+                         │ high-confidence hit → files from session→commit links (SQLite)
+              ┌──────────▼──────────┐
+              │ L2 GIT HISTORY       │  git_history_scope — ALWAYS runs
+              │ pickaxe + intent     │  git log -S, commit-message embeddings
+              └──────────┬──────────┘
+                         │ if scope still empty → files from matching commits
+              ┌──────────▼──────────┐
+              │ L3 GREP            │  search_sessions_grep — ALWAYS runs
+              │ scoped → widen       │  scoped files → git files → full repo
+              └──────────┬──────────┘
                          │
-                    ┌────▼──────────────────────┐
-                    │ 2. SCOPE NARROWING       │
-                    │ (git blame + file track) │
-                    │ extract linked commits   │
-                    │ ~5ms ─────────────────────│ files: [src/auth.ts, src/jwt.ts]
-                    └────┬──────────────────────┘
+              ┌──────────▼──────────┐
+              │ L4 REFINEMENTS     │  ast_symbol_search, diff_search, keyword_search
+              └──────────┬──────────┘
                          │
-                    ┌────▼──────────────────────┐
-                    │ 3. PRECISION SEARCH      │
-                    │ (ast-grep, git grep)     │
-                    │ search only narrowed set │
-                    │ ~10ms ────────────────────│ 3 matches in scope
-                    └────┬──────────────────────┘
-                         │
-                    ┌────▼─────────────────────────────┐
-                    │ Result: 3 hits vs 450 from blind │
-                    │ grep. Agent can read all 3.      │
-                    └──────────────────────────────────┘
+              ┌──────────▼─────────────────────────────┐
+              │ Result: sessions + commits + grep hits │
+              │ + refinements returned in one payload  │
+              └────────────────────────────────────────┘
 ```
 
-**Each stage feeds the next.** If semantic recall returns no result, the agent still has git/grep as a fallback (wider scope, same tool). If the narrowed scope misses a match, it can widen. The funnel doesn't cut off options; it *sequences* them.
+**Each layer feeds the next.** L1 is a bonus scope anchor when past sessions match; L2–L3 still run on a cold start (no indexed sessions). L3 widens automatically if scoped grep returns nothing — the funnel sequences options, it does not hard-filter.
 
-### 1. Semantic Recall: Finding the Right Session
+| Layer | MCP tool(s) | Storage / mechanism | Runs when |
+|-------|-------------|---------------------|-----------|
+| **L1** | `find_similar_sessions` | LanceDB `turn_embeddings` + SQLite penalties | Always attempted; may return `[]` |
+| **L2** | `git_history_scope` (internal) | `git log -S` pickaxe + LanceDB commit intent | **Always** |
+| **L3** | `search_sessions_grep` (internal) | ripgrep/git grep, scoped then widened | **Always** (at least full-repo) |
+| **L4** | `ast_symbol_search`, `diff_search`, `keyword_search` | AST-grep, git diff, keyword scan | Keyword always; ast/diff when scope/git hits exist |
+
+Agents can call **`search_with_fallback`** once (recommended for warm-start) or invoke individual tools in the order above. See `PROMPT.md` for the manual multi-tool pipeline (`ast_search` → `search_sessions_grep` → `blame_current`) used when stepping through layers explicitly.
+
+### L1: Semantic session recall
 
 When you work on a bug, you're working *in a session* — a coding-agent session stored as a transcript. traceback indexes these sessions via embeddings (locally, using `fastembed` / `all-MiniLM-L6-v2`), stores them in LanceDB, and uses **cosine-similarity ANN search** to find the most contextually-relevant past session for a new query.
 
@@ -55,24 +62,24 @@ Why embeddings?
 - **No manual tagging**: the embedding model learns from the raw session text — no need for humans to tag bugs as "auth", "performance", etc.
 - **Local & free**: `fastembed` runs entirely offline; zero API calls, zero inference cost, purely CPU-bound.
 
-The downside: quality is bounded by the embedding model. A model trained mostly on English prose may not catch domain-specific code patterns. But a small, local model beats nothing, and beats a keyword search.
+If L1 finds a **high-confidence** session (`_distance` ≤ `TRACEBACK_CONFIDENCE_THRESHOLD`, default `0.35`), files touched by that session's linked commits become the initial grep scope. If L1 is empty or low-confidence, L2 supplies scope from git history instead.
 
-### 2. Scope Narrowing: From Session to Files
+### L2: Git history scope
 
-Once a semantic match finds the right session, traceback traces the session backwards through git: which commits were made during that session? Which files did those commits touch? Those files become the **search scope**.
+**Always runs**, independent of L1. `git_history_scope` uses `git log -S` (pickaxe) on terms derived from the query, optionally enriched by commit-message intent embeddings in LanceDB. Matching commits and their `files_changed` narrow the search window when L1 did not.
 
 Why git-based scope?
-- **Authoritative**: git blame is the source of truth. If a commit doesn't exist in history, it doesn't belong in scope.
-- **Cheap**: no custom graph traversal. `git log` and `git diff` already answer "which files were touched."
-- **Debuggable**: an agent can see the commits and files traceback used, verify they make sense, and manually override if needed.
+- **Authoritative**: git history is the source of truth for when code changed.
+- **Cheap**: no custom graph traversal — `git log` answers "which commits touched this term?"
+- **Cold-start friendly**: works even with zero indexed sessions (e.g. first day on a repo).
 
-The query is now *scoped* — "find 'token' in [auth.ts, jwt.ts]" instead of "find 'token' anywhere in the repo."
+### L3: Scoped grep with automatic widening
 
-### 3. Precision Search: Exact Match in Scope
+`search_sessions_grep` runs against the scoped file set from L1 and/or L2. If that returns no hits, the funnel widens to all files touched by L2 commits, then to a **full-repo grep** if still empty. The response `mode` field records which path was taken (`scoped_session`, `cold_start_git_scoped`, `grep_full_repo`, etc.).
 
-With files in hand, the agent runs its chosen precision tool — `ast-grep` for structural matches (survives refactoring), `git grep` for exact text, even `git blame` to trace an individual line. All tools now work on a pre-filtered candidate set.
+### L4: Refinements
 
-**Result**: 3 matches instead of 450, all high-signal.
+After grep, the funnel adds structural and diff context: `ast_symbol_search` on scoped files (when a symbol term is derivable), `diff_search` against the top git-scoped commit, and `keyword_search` (always). These land in the `refinements` field of the `search_with_fallback` response.
 
 ## Why This Matters
 
@@ -153,11 +160,11 @@ When the agent gets a match wrong (semantic recall pointed at the wrong session)
 - **No external services**: LanceDB is embedded, SQLite is embedded, git is already on the machine.
 - **No models to download**: `all-MiniLM-L6-v2` (22M parameters) downloads once on first use (~40MB).
 - **Single binary**: the MCP server is Node + TypeScript, cross-platform (Claude Code, Cursor, VS Code/Copilot, Windsurf, JetBrains).
-- **Zero-setup installation**: global git hooks and Claude Code integration fully automatic; works across all IDEs identically.
+- **Zero-setup installation**: global git hooks plus per-IDE warm-start hooks via `npx traceback-setup` (see table below).
 
 ## Limitations & Trade-offs
 
-**Scope-narrowing assumes prior work**: if you've never worked on JWT issues before, traceback can't narrow scope. Graceful degradation: the agent falls back to blind grep. This is fine — warm-start is a *bonus*, not a requirement.
+**Scope-narrowing assumes prior work for L1**: if you've never worked on JWT issues before, L1 session recall may be empty — but **L2 git pickaxe and L3 grep still run** (`cold_start_git_scoped` or `grep_full_repo`). Warm-start is strongest when past sessions are indexed; git-only cold start is the built-in fallback.
 
 **Embedding model quality**: `all-MiniLM-L6-v2` is general-purpose; it may miss domain-specific nuances. A finance codebase might benefit from a model trained on financial data. Swappable, but not done in v1.
 
@@ -173,9 +180,17 @@ npm install
 ```
 Done. The setup script automatically:
 - Sets up global git hooks at `~/.traceback/hooks` (runs on every commit across all repos)
-- Configures Claude Code for automatic warm-start (UserPromptSubmit + PreToolUse hooks in `~/.claude/settings.json`)
-- Registers the MCP server in your editor's config (`.mcp.json`, `.cursor/mcp.json`, or `.vscode/mcp.json`)
-- Works identically across Claude Code, Cursor, and VS Code
+- Registers the MCP server in your editor's config (`.mcp.json`, `.cursor/mcp.json`, `.vscode/mcp.json`, `.windsurf/mcp.json`)
+- Configures **per-IDE warm-start hooks** when the matching config file exists in the repo:
+
+| IDE | Warm-start mechanism |
+|-----|---------------------|
+| **Claude Code** | Native `mcp_tool` hooks on `UserPromptSubmit` + `PreToolUse` Read (`~/.claude/settings.json`) |
+| **VS Code / Copilot / JetBrains Copilot** | Command hooks on `UserPromptSubmit` + `PreToolUse` Read (`.github/hooks/traceback-warmstart.json`) |
+| **Cursor** | Hybrid: `beforeReadFile` hook (`.cursor/hooks.json`) + always-on rule (`.cursor/rules/traceback.mdc`) instructing the agent to call `search_with_fallback` per prompt |
+| **Windsurf** | `pre_user_prompt` command hook (`.windsurf/hooks.json`) when `.windsurf/` is present |
+
+Cursor cannot inject per-prompt context via hooks today (`beforeSubmitPrompt` is block-only); the hybrid rule + read hook is the reliable path.
 
 ### Manual Trigger
 If you need to re-run setup:
@@ -191,7 +206,7 @@ For troubleshooting or manual setup, see the [full install guide](https://github
 
 ```sh
 npm run build                 # compile TypeScript → dist/
-npm test                      # full test suite (231 tests: unit, integration, e2e, regression, evals, security, contracts)
+npm test                      # full test suite (unit, integration, e2e, regression, evals, security, contracts)
 npm run bench                 # performance benchmarks at 1k/5k/10k-row scale with SLA gates
 npm run security:sast         # static analysis (requires `pip install semgrep`)
 npm run security:audit        # dependency audit
@@ -204,7 +219,7 @@ traceback enforces three critical P0 security and performance gates:
 
 1. **Prompt Injection Defense** (22 tests): validates that malicious LLM-generated inputs (SQL injection, git option injection, shell metacharacters, file path traversal) cannot break tool execution or expose unintended data. Core defense: `execFileSync` argv array isolation (command inputs passed as separate array elements, never interpolated into shell strings).
 
-2. **Tool Schema Contracts** (26 tests): ensures all 14 MCP tool signatures maintain backwards-compatibility. Tests validate required fields, enum constraints, type constraints, and that new optional fields never break old consumers. Adding required fields is explicitly prevented (would break existing agents).
+2. **Tool Schema Contracts**: ensures all MCP tool signatures maintain backwards-compatibility (21 tools registered). Tests validate required fields, enum constraints, and type constraints.
 
 3. **Latency SLA Budgets** (CI-gated in `npm run bench`): performance benchmarks fail CI if latencies exceed thresholds, catching 2-3x regressions automatically:
    - `sqlite-insert`: p95 ≤ 20ms, p99 ≤ 50ms

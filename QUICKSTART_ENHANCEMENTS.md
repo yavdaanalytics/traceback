@@ -32,15 +32,15 @@ git config --global core.hooksPath ~/.traceback/hooks
 
 **Result**: Every git commit on your machine will automatically index the session.
 
-### Step 2: Setup MCP in Each Repo (For IDE Integration)
+### Step 2: Setup MCP + warm-start hooks in each repo
 ```bash
 cd /path/to/your/repo
 npx traceback-setup
 ```
 
-This configures `.mcp.json` / `.vscode/mcp.json` / `.cursor/mcp.json` so your IDE can access traceback tools.
+This configures MCP (`.mcp.json` / `.vscode/mcp.json` / `.cursor/mcp.json`) and per-IDE warm-start hooks. See `SETUP.md` for the IDE table.
 
-**Note**: With global hooks configured, setup will skip the per-repo hook installation.
+**Note**: With global hooks configured, setup skips per-repo post-commit hook installation.
 
 ---
 
@@ -180,14 +180,9 @@ IDE (Claude Code / VS Code / Cursor)
   │
   └─► MCP Server (dist/mcp/index.js)
        │
-       └─► find_similar_sessions
-            │
-            ├─ Searches session embeddings (vector DB)
-            ├─ Applies penalty weights (feedback)
-            └─► 🆕 Fetches linked commits + context
-                 ├─ Commit messages
-                 ├─ Files touched
-                 └─ Returns enriched SessionWithContext
+       ├─► search_with_fallback (4-layer: sessions → git → grep → refinements)
+       ├─► find_similar_sessions (L1 — with linked commit context when used directly)
+       └─► git_history_scope, search_sessions_grep, ast/diff/keyword, lineage, …
        │
        └─► Data Layer (auto-indexed by global git hook)
             ├─► Git Hook (Global: ~/.traceback/hooks/post-commit)
@@ -215,9 +210,9 @@ IDE (Claude Code / VS Code / Cursor)
    cd /path/to/repo && npx traceback-setup
    ```
 
-3. **Test in Claude Code**:
-   - Call `find_similar_sessions` with a natural language query
-   - Verify results include commit context
+3. **Test warm-start**:
+   - Call `search_with_fallback` with a natural language query (or rely on IDE hooks after setup)
+   - Verify `git_scope`, `grep_result`, and `session_matches` in the response
 
 4. **Use feedback** to improve search:
    - If a result is wrong, call `submit_feedback` with `verdict: "reject"`

@@ -61,7 +61,7 @@ describe("eval: recall quality (golden set, recall@1)", () => {
         vector: await embedText(g.text),
         project_path: "/eval-repo",
         timestamp: Date.now(),
-        kind: "turn_summary" as const,
+        kind: "embedding_text" as const,
       })),
     );
     await upsertTurnEmbeddings(dataDir, rows);
@@ -122,5 +122,13 @@ describe("eval: HITL usage-contract text is intact", () => {
     expect(registration).toContain("no separate propose-plan step");
     expect(registration).toContain("get an explicit yes/no");
     expect(registration).toContain("ONLY THEN call this tool");
+  });
+});
+
+describe("eval: meta.certainty on search tools", () => {
+  it("labels module defines probabilistic and deterministic", async () => {
+    const { sourceCertainty } = await import("../../src/mcp/labels.js");
+    expect(sourceCertainty("session_vector")).toBe("probabilistic");
+    expect(sourceCertainty("grep_scoped")).toBe("deterministic");
   });
 });
