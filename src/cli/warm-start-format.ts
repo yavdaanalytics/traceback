@@ -64,11 +64,20 @@ export function wrapCursorReadResponse(context: string): string {
   return JSON.stringify({ additional_context: context });
 }
 
-export type WarmStartFormat = "vscode" | "cursor-read" | "windsurf" | "plain";
+export type WarmStartFormat =
+  | "vscode"
+  | "cursor-read"
+  | "cursor-gate"
+  | "cursor-mcp-mark"
+  | "windsurf"
+  | "plain";
 
 export interface HookStdin {
   hook_event_name?: string;
   prompt?: string;
+  conversation_id?: string;
+  generation_id?: string;
+  tool_name?: string;
   tool_input?: { file_path?: string; [key: string]: unknown };
   file_path?: string;
   tool_info?: { user_prompt?: string };

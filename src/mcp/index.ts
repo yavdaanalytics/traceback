@@ -20,10 +20,24 @@ import { wrapWithMeta, type SourceLabel } from "./labels.js";
 import { getSessionDetail } from "./session-detail.js";
 import { astSymbolSearch } from "../ast/symbol-search.js";
 import { diffSearch, keywordSearch } from "./code-search.js";
+import { getConnectionInfo } from "./connection-info.js";
 
 const config = resolveConfig();
 
 const server = new McpServer({ name: "traceback", version: "0.2.0" });
+
+server.registerTool(
+  "get_connection_info",
+  {
+    description:
+      "Returns how to route MCP calls to this traceback server: call_server_id for CallMcpTool, config_key for mcp.json, and per-host install records from ~/.traceback/install.json. Call this first if search_with_fallback fails with an unknown server name.",
+    inputSchema: {},
+  },
+  async () => {
+    const info = getConnectionInfo();
+    return { content: [{ type: "text", text: JSON.stringify(info, null, 2) }] };
+  },
+);
 
 const findSimilarSchema = {
   query: z.string().describe("Natural-language description of the problem/symptom to search for"),
@@ -42,8 +56,14 @@ async function handleFindSimilar(args: {
   const results = await findSimilarSessionsWithContext(config, args.query, args.top_k ?? 5, args.project_path, {
     adapter_id: args.source_tool,
     outcome: args.outcome,
+    tags: args.tags,
   });
-  return wrapWithMeta(results, { source: "session_vector", certainty: "probabilistic", layer: 1 });
+  return wrapWithMeta(results, {
+    source: "session_vector",
+    certainty: "probabilistic",
+    layer: 1,
+    ...(results.length === 0 ? { confidence: "none" as const } : {}),
+  });
 }
 
 server.registerTool(

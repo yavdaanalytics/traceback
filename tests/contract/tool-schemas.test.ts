@@ -66,4 +66,13 @@ describe("MCP tool schema contracts", () => {
       expect(schemas.search_dev_history?.required ?? ["query"]).toContain(req);
     }
   });
+
+  it("recall module exposes enriched session search fields", async () => {
+    const { findSimilarSessionsWithContext } = await import("../../src/mcp/recall.js");
+    expect(typeof findSimilarSessionsWithContext).toBe("function");
+    const src = readFileSync(join(process.cwd(), "src", "mcp", "recall.ts"), "utf-8");
+    expect(src).toContain("outcome_evidence");
+    expect(src).toContain('confidence: ConfidenceLevel');
+    expect(src).toContain("attempts:");
+  });
 });

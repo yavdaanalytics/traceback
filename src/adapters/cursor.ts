@@ -141,6 +141,7 @@ function scanGlobalStorage(storageRoot: string, since?: number): ComposerSession
   }
 
   for (const row of rows) {
+    if (row.value == null) continue;
     const composerId = row.key.replace("composerData:", "");
     const raw = typeof row.value === "string" ? row.value : row.value.toString("utf-8");
     const session = parseComposerData(raw, composerId, "global", globalDb);

@@ -14,6 +14,7 @@ const EXPECTED_TOOLS = [
   "find_similar_sessions",
   "get_change_graph",
   "get_commit_context",
+  "get_connection_info",
   "get_efficiency_report",
   "get_session_detail",
   "get_session_lineage",

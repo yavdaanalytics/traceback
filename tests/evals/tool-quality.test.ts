@@ -115,6 +115,18 @@ describe("eval: warm-start funnel efficiency vs unscoped grep", () => {
   });
 });
 
+describe("eval: Cursor warm-start rule contract is intact", () => {
+  it("renderTracebackCursorRule pins mandatory first-tool-call language", async () => {
+    const { renderTracebackCursorRule } = await import("../../src/cli/setup.js");
+    const rule = renderTracebackCursorRule("user-traceback");
+    expect(rule).toContain("MANDATORY");
+    expect(rule).toContain("tool invocation in that turn MUST be");
+    expect(rule).toContain("search_with_fallback");
+    expect(rule).toContain("preToolUse");
+    expect(rule).toContain("user-traceback");
+  });
+});
+
 describe("eval: HITL usage-contract text is intact", () => {
   it("submit_feedback's tool description still instructs the calling agent to get explicit user approval first", () => {
     const source = readFileSync(join(process.cwd(), "src", "mcp", "index.ts"), "utf-8");

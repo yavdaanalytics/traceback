@@ -4,7 +4,11 @@
       "command": "node",
       "args": [
         "C:/source/traceback/dist/mcp/index.js"
-      ]
+      ],
+      "env": {
+        "TRACEBACK_MCP_SERVER_ID": "traceback",
+        "TRACEBACK_MCP_CONFIG_KEY": "traceback"
+      }
     }
   }
 }
