@@ -4,6 +4,8 @@ export interface SessionRef {
   projectPath: string;
   lastModified: number;
   sizeHint: number;
+  /** Optional absolute path to raw transcript (Claude .jsonl, etc.) */
+  transcriptPath?: string;
 }
 
 export interface ToolCall {
@@ -35,9 +37,20 @@ export interface ParsedSession {
   turns: Turn[];
 }
 
+export interface NormalizedSession extends ParsedSession {
+  transcriptRef: string;
+  segmentIndex: number;
+  sourceFileKey: string;
+  metadata?: { todos?: unknown[]; history?: unknown[] };
+}
+
 export interface SessionAdapter {
   id: string;
   isAvailable(): boolean;
+  discover(since?: number): SessionRef[];
+  parse(ref: SessionRef): NormalizedSession;
+  /** @deprecated use discover */
   listSessions(since?: number): SessionRef[];
-  loadSession(ref: SessionRef): ParsedSession;
+  /** @deprecated use parse */
+  loadSession(ref: SessionRef): NormalizedSession;
 }

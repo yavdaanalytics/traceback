@@ -8,8 +8,53 @@ import { installHook, installGlobalHook } from "./install-hook.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 // This file lives at dist/cli/setup.js at runtime; dist/ is the package root.
-const distDir = dirname(__dirname);
+export const distDir = dirname(__dirname);
 const serverEntryPath = join(distDir, "mcp", "index.js").replace(/\\/g, "/");
+
+export const TRACEBACK_RULE_MARKER = "<!-- traceback-warm-start -->";
+const WARM_START_SCRIPT = "warm-start.js";
+
+export function warmStartScriptPath(packageDistDir: string = distDir): string {
+  return join(packageDistDir, "cli", WARM_START_SCRIPT).replace(/\\/g, "/");
+}
+
+export function warmStartCommand(packageDistDir: string, repoRoot: string, format: string): string {
+  const script = warmStartScriptPath(packageDistDir);
+  const repo = repoRoot.replace(/\\/g, "/");
+  return `node "${script}" --format ${format} --repo-path "${repo}"`;
+}
+
+function isWarmStartHookEntry(entry: unknown): boolean {
+  const e = entry as Record<string, unknown>;
+  if (typeof e.command === "string" && e.command.includes(WARM_START_SCRIPT)) return true;
+  const args = e.args;
+  if (Array.isArray(args) && args.some((a) => typeof a === "string" && a.includes(WARM_START_SCRIPT))) {
+    return true;
+  }
+  return false;
+}
+
+function readJsonObject(path: string): Record<string, unknown> | null {
+  if (!existsSync(path)) return {};
+  const raw = readFileSync(path, "utf-8");
+  try {
+    return raw.trim() === "" ? {} : (JSON.parse(raw) as Record<string, unknown>);
+  } catch {
+    return null;
+  }
+}
+
+function ensureHookArray(
+  root: Record<string, unknown>,
+  hooksKey: string,
+  eventName: string,
+): unknown[] {
+  const hooks = (root[hooksKey] as Record<string, unknown> | undefined) ?? {};
+  root[hooksKey] = hooks;
+  const list = (hooks[eventName] as unknown[] | undefined) ?? [];
+  hooks[eventName] = list;
+  return list;
+}
 
 // Three hosts whose MCP config traceback can auto-detect and merge into.
 // Each host uses a different top-level key and file location - confirmed
@@ -237,6 +282,185 @@ export function setupClaudeCodeHooks(repoRoot: string): void {
   );
 }
 
+export function setupCursorHooks(repoRoot: string, packageDistDir: string = distDir): void {
+  const mcpPath = join(repoRoot, ".cursor", "mcp.json");
+  if (!existsSync(mcpPath)) {
+    console.log("traceback: .cursor/mcp.json not found - skipping Cursor hook setup");
+    return;
+  }
+
+  const hooksPath = join(repoRoot, ".cursor", "hooks.json");
+  const hooksDir = dirname(hooksPath);
+  if (!existsSync(hooksDir)) {
+    mkdirSync(hooksDir, { recursive: true });
+  }
+
+  const parsed = readJsonObject(hooksPath);
+  if (parsed === null) {
+    console.warn("traceback: .cursor/hooks.json is not valid JSON - skipping Cursor hook setup");
+    return;
+  }
+
+  if (parsed.version === undefined) parsed.version = 1;
+  const beforeRead = ensureHookArray(parsed, "hooks", "beforeReadFile");
+  const warmEntry = { command: warmStartCommand(packageDistDir, repoRoot, "cursor-read"), timeout: 90 };
+
+  if (!beforeRead.some(isWarmStartHookEntry)) {
+    beforeRead.push(warmEntry);
+    writeFileSync(hooksPath, `${JSON.stringify(parsed, null, 2)}\n`, "utf-8");
+    console.log("traceback: added beforeReadFile hook to .cursor/hooks.json");
+  } else {
+    console.log("traceback: Cursor beforeReadFile warm-start hook already exists");
+  }
+
+  const rulesDir = join(repoRoot, ".cursor", "rules");
+  const rulePath = join(rulesDir, "traceback.mdc");
+  if (!existsSync(rulesDir)) {
+    mkdirSync(rulesDir, { recursive: true });
+  }
+
+  if (existsSync(rulePath)) {
+    const existing = readFileSync(rulePath, "utf-8");
+    if (existing.includes(TRACEBACK_RULE_MARKER)) {
+      console.log("traceback: .cursor/rules/traceback.mdc already configured");
+      return;
+    }
+  }
+
+  const ruleBody = `---
+alwaysApply: true
+---
+${TRACEBACK_RULE_MARKER}
+
+You have access to the **traceback** MCP server for semantic recall over past coding-agent sessions.
+
+When the user's message involves debugging, searching the codebase, understanding prior work, or refactoring:
+
+1. **First** call MCP tool \`search_with_fallback\` with \`query\` set to the user's message and \`repo_path\` set to the workspace git root.
+2. Use the returned session matches, git scope, and grep hits to narrow subsequent reads and searches.
+3. Prefer scoped tools (\`git_history_scope\`, \`search_sessions_grep\` on narrowed files) before repo-wide grep.
+
+Other useful traceback tools: \`find_similar_sessions\`, \`get_session_detail\`, \`get_change_graph\`, \`blame_current\`.
+`;
+  writeFileSync(rulePath, ruleBody, "utf-8");
+  console.log("traceback: wrote .cursor/rules/traceback.mdc (always-on warm-start instructions)");
+}
+
+export function setupVsCodeHooks(repoRoot: string, packageDistDir: string = distDir): void {
+  const mcpPath = join(repoRoot, ".vscode", "mcp.json");
+  if (!existsSync(mcpPath)) {
+    console.log("traceback: .vscode/mcp.json not found - skipping VS Code/Copilot hook setup");
+    return;
+  }
+
+  const hooksDir = join(repoRoot, ".github", "hooks");
+  if (!existsSync(hooksDir)) {
+    mkdirSync(hooksDir, { recursive: true });
+  }
+
+  const hooksPath = join(hooksDir, "traceback-warmstart.json");
+  const parsed = readJsonObject(hooksPath);
+  if (parsed === null) {
+    console.warn("traceback: .github/hooks/traceback-warmstart.json is not valid JSON - skipping");
+    return;
+  }
+
+  const hooks = (parsed.hooks as Record<string, unknown> | undefined) ?? {};
+  parsed.hooks = hooks;
+
+  const promptHooks = (hooks.UserPromptSubmit as unknown[] | undefined) ?? [];
+  hooks.UserPromptSubmit = promptHooks;
+  const readHooks = (hooks.PreToolUse as unknown[] | undefined) ?? [];
+  hooks.PreToolUse = readHooks;
+
+  const cmd = warmStartCommand(packageDistDir, repoRoot, "vscode");
+  const promptEntry = { type: "command", command: cmd, timeout: 90 };
+  const readEntry = { type: "command", matcher: "Read", command: cmd, timeout: 90 };
+
+  let changed = false;
+  if (!promptHooks.some(isWarmStartHookEntry)) {
+    promptHooks.push(promptEntry);
+    changed = true;
+    console.log("traceback: added UserPromptSubmit hook to .github/hooks/traceback-warmstart.json");
+  }
+  if (!readHooks.some(isWarmStartHookEntry)) {
+    readHooks.push(readEntry);
+    changed = true;
+    console.log("traceback: added PreToolUse Read hook to .github/hooks/traceback-warmstart.json");
+  }
+
+  if (!changed) {
+    console.log("traceback: VS Code/Copilot warm-start hooks already exist");
+    return;
+  }
+
+  writeFileSync(hooksPath, `${JSON.stringify(parsed, null, 2)}\n`, "utf-8");
+  console.log("traceback: configured VS Code / GitHub Copilot hooks in .github/hooks/traceback-warmstart.json");
+}
+
+export function mergeWindsurfMcpConfig(repoRoot: string): void {
+  const mcpPath = join(repoRoot, ".windsurf", "mcp.json");
+  if (!existsSync(mcpPath)) return;
+
+  const raw = readFileSync(mcpPath, "utf-8");
+  let parsed: Record<string, unknown>;
+  try {
+    parsed = raw.trim() === "" ? {} : (JSON.parse(raw) as Record<string, unknown>);
+  } catch {
+    console.warn("traceback: .windsurf/mcp.json is not valid JSON - skipping MCP merge");
+    return;
+  }
+
+  const servers = (parsed.mcpServers as Record<string, unknown> | undefined) ?? {};
+  const desired = serverEntry();
+  if (servers.traceback !== undefined && !sameEntry(servers.traceback, desired)) {
+    console.warn("traceback: .windsurf/mcp.json already has a differing traceback entry - leaving as-is");
+    return;
+  }
+  if (servers.traceback !== undefined) {
+    console.log("traceback: .windsurf/mcp.json already configured correctly");
+    return;
+  }
+
+  parsed.mcpServers = { ...servers, traceback: desired };
+  writeFileSync(mcpPath, `${JSON.stringify(parsed, null, 2)}\n`, "utf-8");
+  console.log("traceback: added traceback to .windsurf/mcp.json");
+}
+
+export function setupWindsurfHooks(repoRoot: string, packageDistDir: string = distDir): void {
+  const windsurfDir = join(repoRoot, ".windsurf");
+  const mcpPath = join(windsurfDir, "mcp.json");
+  if (!existsSync(windsurfDir) && !existsSync(mcpPath)) {
+    console.log("traceback: .windsurf/ not found - skipping Windsurf hook setup");
+    return;
+  }
+
+  if (!existsSync(windsurfDir)) {
+    mkdirSync(windsurfDir, { recursive: true });
+  }
+
+  mergeWindsurfMcpConfig(repoRoot);
+
+  const hooksPath = join(windsurfDir, "hooks.json");
+  const parsed = readJsonObject(hooksPath);
+  if (parsed === null) {
+    console.warn("traceback: .windsurf/hooks.json is not valid JSON - skipping Windsurf hook setup");
+    return;
+  }
+
+  const prePrompt = ensureHookArray(parsed, "hooks", "pre_user_prompt");
+  const warmEntry = { command: warmStartCommand(packageDistDir, repoRoot, "windsurf"), timeout: 90 };
+
+  if (prePrompt.some(isWarmStartHookEntry)) {
+    console.log("traceback: Windsurf pre_user_prompt warm-start hook already exists");
+    return;
+  }
+
+  prePrompt.push(warmEntry);
+  writeFileSync(hooksPath, `${JSON.stringify(parsed, null, 2)}\n`, "utf-8");
+  console.log("traceback: added pre_user_prompt hook to .windsurf/hooks.json");
+}
+
 function main(): void {
   const targetRepoPath = process.argv[2] ?? process.cwd();
   const repoRoot = execFileSync("git", ["rev-parse", "--show-toplevel"], {
@@ -253,6 +477,15 @@ function main(): void {
   // Step 2: Set up Claude Code hooks
   console.log("\n🎯 Setting up Claude Code integration...");
   setupClaudeCodeHooks(repoRoot);
+
+  console.log("\n🎯 Setting up Cursor integration...");
+  setupCursorHooks(repoRoot, distDir);
+
+  console.log("\n🎯 Setting up VS Code / Copilot integration...");
+  setupVsCodeHooks(repoRoot, distDir);
+
+  console.log("\n🎯 Setting up Windsurf integration...");
+  setupWindsurfHooks(repoRoot, distDir);
 
   // Step 3: Check if global hooks are already configured
   console.log("\n📍 Checking MCP server registration...");
@@ -298,8 +531,10 @@ function main(): void {
       "\n💡 What just happened:\n" +
         "  • Global git hooks are now set up at ~/.traceback/hooks\n" +
         "  • Your post-commit hook will run on all commits across repositories\n" +
-        "  • Claude Code will automatically warm-start context using traceback on every prompt\n" +
-        "  • When you read files, traceback will scope search context automatically\n",
+        "  • Claude Code: UserPromptSubmit + PreToolUse warm-start via native MCP hooks\n" +
+        "  • Cursor: beforeReadFile hook + always-on rule (call search_with_fallback per prompt)\n" +
+        "  • VS Code / Copilot / JetBrains Copilot: UserPromptSubmit + PreToolUse hooks in .github/hooks/\n" +
+        "  • Windsurf: pre_user_prompt hook when .windsurf/ is present\n",
     );
   }
 }

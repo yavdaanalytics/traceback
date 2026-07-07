@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "hooks": {
+    "beforeReadFile": [
+      {
+        "command": "node \"C:/source/traceback/dist/cli/warm-start.js\" --format cursor-read --repo-path \"C:/source/traceback\"",
+        "timeout": 90
+      }
+    ]
+  }
+}

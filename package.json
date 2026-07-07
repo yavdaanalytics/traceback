@@ -8,6 +8,7 @@
     "traceback-install-hook": "dist/cli/install-hook.js",
     "traceback-install-global-hook": "dist/cli/install-global-hook.js",
     "traceback-setup": "dist/cli/setup.js",
+    "traceback-warmstart": "dist/cli/warm-start.js",
     "traceback-dashboard": "dist/cli/dashboard.js"
   },
   "scripts": {

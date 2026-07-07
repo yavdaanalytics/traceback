@@ -70,7 +70,7 @@ beforeAll(async () => {
       vector: await embedText(t.text),
       project_path: t.session_id === "sess-winpath" ? "C:/Source/Traceback" : "/repo",
       timestamp: Date.now(),
-      kind: "turn_summary" as const,
+      kind: "embedding_text" as const,
     })),
   );
   await upsertTurnEmbeddings(dataDir, rows);

@@ -8,7 +8,7 @@ grepping the whole repo blind.
 - **Runtime**: Node >=22.5.0, TypeScript, ESM (`"type": "module"`), compiled via `tsc` (`npm run build`).
 - **MCP transport**: `@modelcontextprotocol/sdk` (`McpServer` + `StdioServerTransport`), tools registered via `server.registerTool(name, {description, inputSchema: zod}, handler)`.
 - **Relational/graph storage**: Node's built-in `node:sqlite` (`DatabaseSync`) — chosen over `better-sqlite3` to avoid native-binary/build-toolchain friction on Windows. Schema lives in `src/storage/sqlite.ts` as a single `CREATE TABLE IF NOT EXISTS` string; new columns on existing tables need a guarded `PRAGMA table_info` + `ALTER TABLE` migration (`CREATE TABLE IF NOT EXISTS` alone won't add columns).
-- **Vector storage**: `@lancedb/lancedb`, embedded, cosine/L2 ANN search. Default `.search()` metric is **ascending L2 distance** (`_distance` field, lower = more similar) — no `.metricType()` call exists in `src/storage/lancedb.ts`, so treat it as distance, not similarity, anywhere you touch ranking.
+- **Vector storage**: `@lancedb/lancedb`, embedded, **cosine** ANN search via `.distanceType("cosine")` on every vector query. `_distance` is ascending cosine distance (lower = more similar, range ~0–2). Default `TRACEBACK_CONFIDENCE_THRESHOLD` is **0.35** (cosine scale).
 - **Embeddings**: `fastembed` (`all-MiniLM-L6-v2`), local, free, no LLM API call.
 - **Validation**: `zod` for MCP tool input schemas.
 - **No logging library** is installed.
@@ -41,5 +41,4 @@ Other checks:
 - No DAST — `traceback` is a local stdio MCP server with no network listener, so HTTP-facing DAST tooling (ZAP, etc.) doesn't apply.
 
 ## Out of scope / deliberately unwired
-- `src/git/commit-window.ts` (`getCommitWindow`, N-before/M-after logic) exists but is not called from anywhere — confirmed dead code, not a bug.
 - The "Episode" model mentioned in `ROADMAP.md` is deferred, not v1.

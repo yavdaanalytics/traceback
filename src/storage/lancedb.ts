@@ -1,4 +1,5 @@
 import * as lancedb from "@lancedb/lancedb";
+import type { VectorQuery } from "@lancedb/lancedb";
 import { normalizePath } from "../util/paths.js";
 
 export interface TurnEmbeddingRow {
@@ -11,7 +12,7 @@ export interface TurnEmbeddingRow {
   vector: number[];
   project_path: string;
   timestamp: number;
-  kind: "turn_summary" | "tool_call" | "session_summary";
+  kind: "embedding_text";
 }
 
 export interface CommitEmbeddingRow {
@@ -47,6 +48,16 @@ async function ensureTable<T extends Record<string, unknown>>(
   return conn.createTable(name, [sampleRow]);
 }
 
+/** Shared vector search with cosine distance (ascending _distance, lower = more similar). */
+async function vectorSearch<T extends Record<string, unknown>>(
+  table: lancedb.Table,
+  vector: number[],
+  topK: number,
+): Promise<T[]> {
+  const results = await (table.search(vector) as VectorQuery).distanceType("cosine").limit(topK).toArray();
+  return results as unknown as T[];
+}
+
 export async function upsertTurnEmbeddings(dataDir: string, rows: TurnEmbeddingRow[]): Promise<void> {
   if (rows.length === 0) return;
   const conn = await getConnection(dataDir);
@@ -74,12 +85,8 @@ export async function searchSimilarTurns(
   const existing = await conn.tableNames();
   if (!existing.includes(TURN_TABLE)) return [];
   const table = await conn.openTable(TURN_TABLE);
-  let query = table.search(queryVector).limit(topK);
+  let query = (table.search(queryVector) as VectorQuery).distanceType("cosine").limit(topK);
   if (projectPath) {
-    // project_path values come from different session adapters (native OS
-    // separators/casing) - normalize both sides the same way normalizePath()
-    // does elsewhere in the ingest pipeline, so a caller passing "C:\foo"
-    // still matches a row stored as "c:/foo".
     const normalized = normalizePath(projectPath).replace(/'/g, "''");
     query = query.where(`LOWER(REPLACE(project_path, '\\', '/')) = '${normalized}'`);
   }
@@ -95,5 +102,15 @@ export async function searchSimilarCommits(
   const existing = await conn.tableNames();
   if (!existing.includes(COMMIT_TABLE)) return [];
   const table = await conn.openTable(COMMIT_TABLE);
-  return (await table.search(queryVector).limit(topK).toArray()) as unknown as CommitEmbeddingRow[];
+  return vectorSearch<CommitEmbeddingRow>(table, queryVector, topK);
+}
+
+export async function hasEmbeddingTextRow(dataDir: string, sessionId: string): Promise<boolean> {
+  const conn = await getConnection(dataDir);
+  const existing = await conn.tableNames();
+  if (!existing.includes(TURN_TABLE)) return false;
+  const table = await conn.openTable(TURN_TABLE);
+  const escaped = sessionId.replace(/'/g, "''");
+  const rows = await table.query().where(`session_id = '${escaped}' AND kind = 'embedding_text'`).limit(1).toArray();
+  return rows.length > 0;
 }

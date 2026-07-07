@@ -1,0 +1,19 @@
+{
+  "hooks": {
+    "UserPromptSubmit": [
+      {
+        "type": "command",
+        "command": "node \"C:/source/traceback/dist/cli/warm-start.js\" --format vscode --repo-path \"C:/source/traceback\"",
+        "timeout": 90
+      }
+    ],
+    "PreToolUse": [
+      {
+        "type": "command",
+        "matcher": "Read",
+        "command": "node \"C:/source/traceback/dist/cli/warm-start.js\" --format vscode --repo-path \"C:/source/traceback\"",
+        "timeout": 90
+      }
+    ]
+  }
+}
