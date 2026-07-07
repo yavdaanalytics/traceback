@@ -7,6 +7,7 @@ import {
   setupVsCodeHooks,
   setupWindsurfHooks,
   TRACEBACK_RULE_MARKER,
+  TRACEBACK_SERVER_ID_MARKER,
   warmStartScriptPath,
 } from "../../src/cli/setup.js";
 
@@ -43,16 +44,50 @@ describe("setupCursorHooks", () => {
 
     const hooks = JSON.parse(readFileSync(join(repoRoot, ".cursor", "hooks.json"), "utf-8"));
     expect(hooks.hooks.beforeReadFile).toHaveLength(1);
-    expect(hooks.hooks.beforeReadFile[0].command).toContain("warm-start.js");
     expect(hooks.hooks.beforeReadFile[0].command).toContain("cursor-read");
+    expect(hooks.hooks.preToolUse).toHaveLength(1);
+    expect(hooks.hooks.preToolUse[0].matcher).toBe("Grep|Glob");
+    expect(hooks.hooks.preToolUse[0].command).toContain("cursor-gate");
+    expect(hooks.hooks.afterMCPExecution).toHaveLength(1);
+    expect(hooks.hooks.afterMCPExecution[0].command).toContain("cursor-mcp-mark");
 
     const rule = readFileSync(join(repoRoot, ".cursor", "rules", "traceback.mdc"), "utf-8");
     expect(rule).toContain(TRACEBACK_RULE_MARKER);
+    expect(rule).toContain(TRACEBACK_SERVER_ID_MARKER);
     expect(rule).toContain("alwaysApply: true");
     expect(rule).toContain("search_with_fallback");
+    expect(rule).toContain("get_connection_info");
+    expect(rule).toContain("MANDATORY");
+    expect(rule).toContain("preToolUse");
+    expect(rule).toContain("user-traceback");
   });
 
-  it("is idempotent on second run", () => {
+  it("updates rule with call_server_id on second run", () => {
+    mkdirSync(join(repoRoot, ".cursor"), { recursive: true });
+    writeJson(join(repoRoot, ".cursor", "mcp.json"), { mcpServers: {} });
+
+    setupCursorHooks(repoRoot, fakeDist);
+    const firstRule = readFileSync(join(repoRoot, ".cursor", "rules", "traceback.mdc"), "utf-8");
+    setupCursorHooks(repoRoot, fakeDist);
+    const secondRule = readFileSync(join(repoRoot, ".cursor", "rules", "traceback.mdc"), "utf-8");
+    expect(secondRule).toContain(TRACEBACK_SERVER_ID_MARKER);
+    expect(secondRule).toBe(firstRule);
+  });
+
+  it("does not duplicate gate hooks on second run", () => {
+    mkdirSync(join(repoRoot, ".cursor"), { recursive: true });
+    writeJson(join(repoRoot, ".cursor", "mcp.json"), { mcpServers: {} });
+
+    setupCursorHooks(repoRoot, fakeDist);
+    setupCursorHooks(repoRoot, fakeDist);
+
+    const hooks = JSON.parse(readFileSync(join(repoRoot, ".cursor", "hooks.json"), "utf-8"));
+    expect(hooks.hooks.beforeReadFile).toHaveLength(1);
+    expect(hooks.hooks.preToolUse).toHaveLength(1);
+    expect(hooks.hooks.afterMCPExecution).toHaveLength(1);
+  });
+
+  it("is idempotent on second run for hooks", () => {
     mkdirSync(join(repoRoot, ".cursor"), { recursive: true });
     writeJson(join(repoRoot, ".cursor", "mcp.json"), { mcpServers: {} });
 

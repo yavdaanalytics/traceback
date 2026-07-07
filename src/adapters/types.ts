@@ -41,7 +41,12 @@ export interface NormalizedSession extends ParsedSession {
   transcriptRef: string;
   segmentIndex: number;
   sourceFileKey: string;
-  metadata?: { todos?: unknown[]; history?: unknown[] };
+  metadata?: {
+    todos?: unknown[];
+    history?: unknown[];
+    editFiles?: string[];
+    commitHashes?: string[];
+  };
 }
 
 export interface SessionAdapter {

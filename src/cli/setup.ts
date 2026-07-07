@@ -5,6 +5,13 @@ import { fileURLToPath } from "node:url";
 import { execFileSync } from "node:child_process";
 import { homedir } from "node:os";
 import { installHook, installGlobalHook } from "./install-hook.js";
+import {
+  recordHostInstall,
+  resolveCallServerId,
+  resolveCursorCallServerId,
+  TRACEBACK_CONFIG_KEY,
+  type InstallScope,
+} from "../install/registry.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 // This file lives at dist/cli/setup.js at runtime; dist/ is the package root.
@@ -12,6 +19,7 @@ export const distDir = dirname(__dirname);
 const serverEntryPath = join(distDir, "mcp", "index.js").replace(/\\/g, "/");
 
 export const TRACEBACK_RULE_MARKER = "<!-- traceback-warm-start -->";
+export const TRACEBACK_SERVER_ID_MARKER = "<!-- traceback-mcp-server-id:";
 const WARM_START_SCRIPT = "warm-start.js";
 
 export function warmStartScriptPath(packageDistDir: string = distDir): string {
@@ -32,6 +40,11 @@ function isWarmStartHookEntry(entry: unknown): boolean {
     return true;
   }
   return false;
+}
+
+function isWarmStartFormatEntry(entry: unknown, format: string): boolean {
+  const e = entry as Record<string, unknown>;
+  return typeof e.command === "string" && e.command.includes(WARM_START_SCRIPT) && e.command.includes(format);
 }
 
 function readJsonObject(path: string): Record<string, unknown> | null {
@@ -66,16 +79,66 @@ interface HostConfig {
   name: string;
   relPath: string;
   serversKey: "mcpServers" | "servers";
+  hostId: string;
+  scope: InstallScope;
 }
 
 const HOSTS: HostConfig[] = [
-  { name: "Claude Code", relPath: ".mcp.json", serversKey: "mcpServers" },
-  { name: "Cursor", relPath: ".cursor/mcp.json", serversKey: "mcpServers" },
-  { name: "VS Code / GitHub Copilot", relPath: ".vscode/mcp.json", serversKey: "servers" },
+  { name: "Claude Code", relPath: ".mcp.json", serversKey: "mcpServers", hostId: "claude", scope: "project" },
+  { name: "Cursor", relPath: ".cursor/mcp.json", serversKey: "mcpServers", hostId: "cursor", scope: "project" },
+  {
+    name: "VS Code / GitHub Copilot",
+    relPath: ".vscode/mcp.json",
+    serversKey: "servers",
+    hostId: "vscode",
+    scope: "project",
+  },
 ];
 
-export function serverEntry(): Record<string, unknown> {
-  return { command: "node", args: [serverEntryPath] };
+export function serverEntry(callServerId: string = TRACEBACK_CONFIG_KEY): Record<string, unknown> {
+  return {
+    command: "node",
+    args: [serverEntryPath],
+    env: {
+      TRACEBACK_MCP_SERVER_ID: callServerId,
+      TRACEBACK_MCP_CONFIG_KEY: TRACEBACK_CONFIG_KEY,
+    },
+  };
+}
+
+function entriesCompatible(existing: unknown, desired: Record<string, unknown>): boolean {
+  if (!existing || typeof existing !== "object") return false;
+  const entry = existing as Record<string, unknown>;
+  return entry.command === desired.command && JSON.stringify(entry.args) === JSON.stringify(desired.args);
+}
+
+export function renderTracebackCursorRule(callServerId: string): string {
+  return `---
+alwaysApply: true
+---
+${TRACEBACK_RULE_MARKER}
+${TRACEBACK_SERVER_ID_MARKER} ${callServerId} -->
+
+You have access to the **traceback** MCP server for semantic recall over past coding-agent sessions.
+
+## MANDATORY — first tool call (contract violation if skipped)
+
+For **every** user message that is not purely conversational (greetings, thanks, or mode switches), your **first** tool invocation in that turn MUST be:
+
+\`CallMcpTool\` with \`server\` = \`${callServerId}\`, \`toolName\` = \`search_with_fallback\`, \`query\` = the user's full message, \`repo_path\` = workspace git root.
+
+**Forbidden before \`search_with_fallback\` completes:** \`Grep\`, \`Glob\`, \`Task\` (explore), repo-wide reads of SETUP.md/README, or any repo-wide search tool. Cursor \`preToolUse\` hooks block Grep/Glob until you comply.
+
+**MCP routing:** The mcp.json config key is \`traceback\`; Cursor global installs expose \`user-traceback\`. If a call fails with "server does not exist", call \`get_connection_info\` on whichever traceback server is listed under your MCP tools, then retry with the returned \`call_server_id\`.
+
+## After warm-start
+
+1. Use returned \`session_matches\`, \`git_scope\`, and \`grep_result\` to narrow every subsequent read and search.
+2. Prefer scoped tools (\`git_history_scope\`, \`search_sessions_grep\` on narrowed files) before repo-wide grep.
+3. Do not re-run repo-wide \`Grep\`/\`Glob\` when \`search_with_fallback\` already returned scoped hits.
+
+Other useful traceback tools: \`get_connection_info\`, \`find_similar_sessions\`, \`get_session_detail\`, \`get_change_graph\`, \`blame_current\`.
+`;
 }
 
 export function sameEntry(a: unknown, b: unknown): boolean {
@@ -100,31 +163,98 @@ export function mergeHostConfig(repoRoot: string, host: HostConfig): void {
   }
 
   const servers = (parsed[host.serversKey] as Record<string, unknown> | undefined) ?? {};
-  const existing = servers.traceback;
-  const desired = serverEntry();
+  const existing = servers[TRACEBACK_CONFIG_KEY];
+  const callServerId = resolveCallServerId(host.hostId, host.scope);
+  const desired = serverEntry(callServerId);
 
-  if (existing !== undefined && !sameEntry(existing, desired)) {
+  if (existing !== undefined && !sameEntry(existing, desired) && !entriesCompatible(existing, desired)) {
     console.warn(
-      `traceback: ${host.relPath} already has a "traceback" entry under "${host.serversKey}" that differs ` +
+      `traceback: ${host.relPath} already has a "${TRACEBACK_CONFIG_KEY}" entry under "${host.serversKey}" that differs ` +
         `from what this install would write - leaving it as-is. Existing: ${JSON.stringify(existing)}. ` +
         `Expected: ${JSON.stringify(desired)}.`,
     );
+    recordHostInstall(host.hostId, {
+      config_key: TRACEBACK_CONFIG_KEY,
+      call_server_id: callServerId,
+      scope: host.scope,
+      config_path: fullPath,
+      hook_server_id: TRACEBACK_CONFIG_KEY,
+    });
     return;
   }
 
-  if (existing !== undefined) {
+  const mergedEntry =
+    existing !== undefined && entriesCompatible(existing, desired)
+      ? { ...(existing as Record<string, unknown>), env: (desired.env as Record<string, string>) }
+      : desired;
+
+  if (existing !== undefined && sameEntry(existing, mergedEntry)) {
     console.log(`traceback: ${host.relPath} already configured correctly - nothing to do.`);
+  } else {
+    parsed[host.serversKey] = { ...servers, [TRACEBACK_CONFIG_KEY]: mergedEntry };
+    writeFileSync(fullPath, `${JSON.stringify(parsed, null, 2)}\n`, "utf-8");
+    console.log(`traceback: added "${TRACEBACK_CONFIG_KEY}" to ${host.relPath} under "${host.serversKey}"`);
+  }
+
+  recordHostInstall(host.hostId, {
+    config_key: TRACEBACK_CONFIG_KEY,
+    call_server_id: callServerId,
+    scope: host.scope,
+    config_path: fullPath,
+    hook_server_id: TRACEBACK_CONFIG_KEY,
+  });
+}
+
+export function mergeGlobalCursorConfig(): void {
+  const globalPath = join(homedir(), ".cursor", "mcp.json");
+  if (!existsSync(globalPath)) {
+    console.log("traceback: ~/.cursor/mcp.json not found - skipping global Cursor MCP merge");
     return;
   }
 
-  parsed[host.serversKey] = { ...servers, traceback: desired };
-  writeFileSync(fullPath, `${JSON.stringify(parsed, null, 2)}\n`, "utf-8");
-  console.log(`traceback: added "traceback" to ${host.relPath} under "${host.serversKey}"`);
+  const parsed = readJsonObject(globalPath);
+  if (parsed === null) {
+    console.warn("traceback: ~/.cursor/mcp.json is not valid JSON - skipping global Cursor MCP merge");
+    return;
+  }
+
+  const servers = (parsed.mcpServers as Record<string, unknown> | undefined) ?? {};
+  const existing = servers[TRACEBACK_CONFIG_KEY];
+  const callServerId = resolveCallServerId("cursor", "global");
+  const desired = serverEntry(callServerId);
+
+  if (existing !== undefined && !sameEntry(existing, desired) && !entriesCompatible(existing, desired)) {
+    console.warn(
+      "traceback: ~/.cursor/mcp.json already has a differing traceback entry - leaving as-is but recording install id",
+    );
+  } else {
+    const mergedEntry =
+      existing !== undefined && entriesCompatible(existing, desired)
+        ? { ...(existing as Record<string, unknown>), env: (desired.env as Record<string, string>) }
+        : desired;
+
+    if (existing === undefined || !sameEntry(existing, mergedEntry)) {
+      parsed.mcpServers = { ...servers, [TRACEBACK_CONFIG_KEY]: mergedEntry };
+      writeFileSync(globalPath, `${JSON.stringify(parsed, null, 2)}\n`, "utf-8");
+      console.log(`traceback: merged traceback into ~/.cursor/mcp.json (call_server_id=${callServerId})`);
+    } else {
+      console.log("traceback: ~/.cursor/mcp.json already configured correctly");
+    }
+  }
+
+  recordHostInstall("cursor-global", {
+    config_key: TRACEBACK_CONFIG_KEY,
+    call_server_id: callServerId,
+    scope: "global",
+    config_path: globalPath,
+    hook_server_id: TRACEBACK_CONFIG_KEY,
+  });
 }
 
 export function printSnippet(host: HostConfig): void {
+  const callServerId = resolveCallServerId(host.hostId, host.scope);
   console.log(
-    JSON.stringify({ [host.serversKey]: { traceback: serverEntry() } }, null, 2),
+    JSON.stringify({ [host.serversKey]: { [TRACEBACK_CONFIG_KEY]: serverEntry(callServerId) } }, null, 2),
   );
 }
 
@@ -313,37 +443,45 @@ export function setupCursorHooks(repoRoot: string, packageDistDir: string = dist
     console.log("traceback: Cursor beforeReadFile warm-start hook already exists");
   }
 
+  const preToolUse = ensureHookArray(parsed, "hooks", "preToolUse");
+  const gateEntry = {
+    command: warmStartCommand(packageDistDir, repoRoot, "cursor-gate"),
+    matcher: "Grep|Glob",
+    timeout: 10,
+  };
+  if (!preToolUse.some((e) => isWarmStartFormatEntry(e, "cursor-gate"))) {
+    preToolUse.push(gateEntry);
+    writeFileSync(hooksPath, `${JSON.stringify(parsed, null, 2)}\n`, "utf-8");
+    console.log("traceback: added preToolUse Grep/Glob gate to .cursor/hooks.json");
+  } else {
+    console.log("traceback: Cursor preToolUse warm-start gate already exists");
+  }
+
+  const afterMcp = ensureHookArray(parsed, "hooks", "afterMCPExecution");
+  const mcpMarkEntry = {
+    command: warmStartCommand(packageDistDir, repoRoot, "cursor-mcp-mark"),
+    matcher: "search_with_fallback",
+    timeout: 10,
+  };
+  if (!afterMcp.some((e) => isWarmStartFormatEntry(e, "cursor-mcp-mark"))) {
+    afterMcp.push(mcpMarkEntry);
+    writeFileSync(hooksPath, `${JSON.stringify(parsed, null, 2)}\n`, "utf-8");
+    console.log("traceback: added afterMCPExecution marker to .cursor/hooks.json");
+  } else {
+    console.log("traceback: Cursor afterMCPExecution warm-start marker already exists");
+  }
+
   const rulesDir = join(repoRoot, ".cursor", "rules");
   const rulePath = join(rulesDir, "traceback.mdc");
   if (!existsSync(rulesDir)) {
     mkdirSync(rulesDir, { recursive: true });
   }
 
-  if (existsSync(rulePath)) {
-    const existing = readFileSync(rulePath, "utf-8");
-    if (existing.includes(TRACEBACK_RULE_MARKER)) {
-      console.log("traceback: .cursor/rules/traceback.mdc already configured");
-      return;
-    }
-  }
-
-  const ruleBody = `---
-alwaysApply: true
----
-${TRACEBACK_RULE_MARKER}
-
-You have access to the **traceback** MCP server for semantic recall over past coding-agent sessions.
-
-When the user's message involves debugging, searching the codebase, understanding prior work, or refactoring:
-
-1. **First** call MCP tool \`search_with_fallback\` with \`query\` set to the user's message and \`repo_path\` set to the workspace git root.
-2. Use the returned session matches, git scope, and grep hits to narrow subsequent reads and searches.
-3. Prefer scoped tools (\`git_history_scope\`, \`search_sessions_grep\` on narrowed files) before repo-wide grep.
-
-Other useful traceback tools: \`find_similar_sessions\`, \`get_session_detail\`, \`get_change_graph\`, \`blame_current\`.
-`;
-  writeFileSync(rulePath, ruleBody, "utf-8");
-  console.log("traceback: wrote .cursor/rules/traceback.mdc (always-on warm-start instructions)");
+  const callServerId = resolveCursorCallServerId(repoRoot);
+  writeFileSync(rulePath, renderTracebackCursorRule(callServerId), "utf-8");
+  console.log(
+    `traceback: wrote .cursor/rules/traceback.mdc (call_server_id=${callServerId})`,
+  );
 }
 
 export function setupVsCodeHooks(repoRoot: string, packageDistDir: string = distDir): void {
@@ -412,19 +550,33 @@ export function mergeWindsurfMcpConfig(repoRoot: string): void {
   }
 
   const servers = (parsed.mcpServers as Record<string, unknown> | undefined) ?? {};
-  const desired = serverEntry();
-  if (servers.traceback !== undefined && !sameEntry(servers.traceback, desired)) {
+  const desired = serverEntry(TRACEBACK_CONFIG_KEY);
+  const existing = servers[TRACEBACK_CONFIG_KEY];
+  if (existing !== undefined && !sameEntry(existing, desired) && !entriesCompatible(existing, desired)) {
     console.warn("traceback: .windsurf/mcp.json already has a differing traceback entry - leaving as-is");
     return;
   }
-  if (servers.traceback !== undefined) {
+  if (existing !== undefined && sameEntry(existing, desired)) {
     console.log("traceback: .windsurf/mcp.json already configured correctly");
     return;
   }
 
-  parsed.mcpServers = { ...servers, traceback: desired };
+  const mergedEntry =
+    existing !== undefined && entriesCompatible(existing, desired)
+      ? { ...(existing as Record<string, unknown>), env: (desired.env as Record<string, string>) }
+      : desired;
+
+  parsed.mcpServers = { ...servers, [TRACEBACK_CONFIG_KEY]: mergedEntry };
   writeFileSync(mcpPath, `${JSON.stringify(parsed, null, 2)}\n`, "utf-8");
   console.log("traceback: added traceback to .windsurf/mcp.json");
+
+  recordHostInstall("windsurf", {
+    config_key: TRACEBACK_CONFIG_KEY,
+    call_server_id: TRACEBACK_CONFIG_KEY,
+    scope: "project",
+    config_path: mcpPath,
+    hook_server_id: TRACEBACK_CONFIG_KEY,
+  });
 }
 
 export function setupWindsurfHooks(repoRoot: string, packageDistDir: string = distDir): void {
@@ -489,6 +641,8 @@ function main(): void {
 
   // Step 3: Check if global hooks are already configured
   console.log("\n📍 Checking MCP server registration...");
+  mergeGlobalCursorConfig();
+
   let hasGlobalHooks = false;
   try {
     const globalHooksPath = execFileSync("git", ["config", "--global", "core.hooksPath"], {
@@ -532,7 +686,8 @@ function main(): void {
         "  • Global git hooks are now set up at ~/.traceback/hooks\n" +
         "  • Your post-commit hook will run on all commits across repositories\n" +
         "  • Claude Code: UserPromptSubmit + PreToolUse warm-start via native MCP hooks\n" +
-        "  • Cursor: beforeReadFile hook + always-on rule (call search_with_fallback per prompt)\n" +
+        "  • Cursor: beforeReadFile hook + preToolUse Grep/Glob gate + always-on rule (call search_with_fallback first)\n" +
+        "  • MCP install registry: ~/.traceback/install.json (use get_connection_info for routing id)\n" +
         "  • VS Code / Copilot / JetBrains Copilot: UserPromptSubmit + PreToolUse hooks in .github/hooks/\n" +
         "  • Windsurf: pre_user_prompt hook when .windsurf/ is present\n",
     );

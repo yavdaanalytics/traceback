@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { resolveConfig } from "../config.js";
 import { searchWithFallback } from "../mcp/fallback.js";
+import { resolveCursorCallServerId } from "../install/registry.js";
 import {
   extractQueryFromStdin,
   formatWarmStartContext,
@@ -12,6 +13,7 @@ import {
   type HookStdin,
   type WarmStartFormat,
 } from "./warm-start-format.js";
+import { runCursorMcpMark, runCursorWarmGate } from "./warm-start-cursor.js";
 
 function parseArgs(argv: string[]): {
   format: WarmStartFormat;
@@ -54,6 +56,14 @@ export async function runWarmStart(opts: {
   stdin?: HookStdin;
 }): Promise<string> {
   const stdin = opts.stdin ?? {};
+  if (opts.format === "cursor-gate" || opts.format === "cursor-mcp-mark") {
+    if (opts.format === "cursor-gate") {
+      const callServerId = resolveCursorCallServerId(opts.repoPath);
+      return runCursorWarmGate({ repoPath: opts.repoPath, stdin, callServerId });
+    }
+    return runCursorMcpMark({ repoPath: opts.repoPath, stdin });
+  }
+
   const query = extractQueryFromStdin(opts.format, stdin, opts.query);
   if (!query) {
     if (opts.format === "plain") {
