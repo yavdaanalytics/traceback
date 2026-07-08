@@ -129,6 +129,10 @@ Together they're **fast and queryable**. Separately, each is incomplete.
 
 traceback logs telemetry on every tool invocation — how deep in history a match reached, how many lines were scoped vs. an unscoped grep baseline, whether the match was a hit or miss. Over time, this answers: *"is the warm-start funnel actually saving tokens, or just moving the problem around?"*
 
+For hosts that support pre-routing before MCP calls, traceback also supports a
+balanced host-first contract via [`SKILL.md`](SKILL.md): strong and weak matches
+invoke traceback, while clearly non-code prompts skip it.
+
 ### Real-Time Dashboard
 
 Run **`traceback-dashboard`** to launch an interactive web dashboard at `http://127.0.0.1:5555`:

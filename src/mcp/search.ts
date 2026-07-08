@@ -25,8 +25,8 @@ export function astSearch(repoPath: string, pattern: string, files: string[], la
 
 // Exact/regex text search, scoped to specific files (the AST/semantic-narrowed
 // candidate set) rather than the whole repo.
-export function searchGrep(repoPath: string, pattern: string, files: string[]): string {
-  const args = ["grep", "-E", "-n", "-e", pattern, "--", ...(files.length ? files : ["."])];
+export function searchGrep(repoPath: string, pattern: string, files: string[], excludes: string[] = []): string {
+  const args = ["grep", "-E", "-n", "-e", pattern, "--", ...(files.length ? files : ["."]), ...excludes];
   return runCapture("git", args, repoPath);
 }
 

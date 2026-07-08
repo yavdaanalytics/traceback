@@ -1,13 +1,24 @@
 import type { FallbackResult } from "../mcp/fallback.js";
+import { summarizeFallbackForAgent } from "../mcp/payload-formatter.js";
 
 const MAX_GREP_LINES = 40;
 const MAX_SESSIONS = 5;
 const MAX_COMMITS = 5;
 
 export function formatWarmStartContext(result: FallbackResult): string {
-  const lines: string[] = ["## traceback warm-start context", `mode: ${result.mode}`];
+  const summary = summarizeFallbackForAgent(result, { maxGrepLines: MAX_GREP_LINES, omitEmptyRefinements: true });
+  const lines: string[] = ["## traceback warm-start context", `mode: ${String(summary.mode)}`];
 
-  if (result.session_matches?.length) {
+  const intentSummary = summary.intent_summary as
+    | { sessions?: Array<{ session_id: string; distance: number; outcome?: string | null }> }
+    | undefined;
+  if (intentSummary?.sessions?.length) {
+    lines.push("", "### similar past sessions");
+    for (const s of intentSummary.sessions.slice(0, MAX_SESSIONS)) {
+      const outcome = s.outcome ? ` outcome=${s.outcome}` : "";
+      lines.push(`- session_id=${s.session_id} distance=${s.distance.toFixed(3)}${outcome}`);
+    }
+  } else if (result.session_matches?.length) {
     lines.push("", "### similar past sessions");
     for (const s of result.session_matches.slice(0, MAX_SESSIONS)) {
       lines.push(`- session_id=${s.session_id} distance=${s._distance.toFixed(3)}`);
@@ -23,28 +34,40 @@ export function formatWarmStartContext(result: FallbackResult): string {
     }
   }
 
-  const grepLines = result.grep_result.split("\n").filter(Boolean);
-  if (grepLines.length > 0) {
+  const grepRows = (summary.grep_results as Array<{ file: string; line: number; snippet: string }> | undefined) ?? [];
+  if (grepRows.length > 0) {
     lines.push("", "### scoped grep hits");
-    for (const line of grepLines.slice(0, MAX_GREP_LINES)) {
-      lines.push(line);
+    for (const row of grepRows) {
+      lines.push(`${row.file}:${row.line}:${row.snippet}`);
     }
-    if (grepLines.length > MAX_GREP_LINES) {
-      lines.push(`... (${grepLines.length - MAX_GREP_LINES} more lines)`);
+    const grepSummary = summary.grep_summary as { total_hits?: number } | undefined;
+    const total = grepSummary?.total_hits ?? grepRows.length;
+    if (total > grepRows.length) {
+      lines.push(`... (${total - grepRows.length} more lines)`);
     }
   }
 
-  if (result.refinements?.ast?.trim()) {
-    lines.push("", "### ast symbol search", result.refinements.ast.trim().slice(0, 2000));
+  const ast = summary.ast_refinements;
+  if (typeof ast === "string" && ast.trim()) {
+    lines.push("", "### ast symbol search", ast.trim().slice(0, 2000));
   }
-  if (result.refinements?.keyword?.trim()) {
-    lines.push("", "### keyword search", result.refinements.keyword.trim().slice(0, 2000));
+  const keyword = summary.keyword_refinements;
+  if (typeof keyword === "string" && keyword.trim()) {
+    lines.push("", "### keyword search", keyword.trim().slice(0, 2000));
   }
 
   if (result.layers.length > 0) {
     lines.push("", "### layers");
     for (const layer of result.layers) {
       lines.push(`- L${layer.layer} ${layer.tool} (${layer.mode})`);
+    }
+  }
+
+  const patterns = summary.relevant_patterns as Array<{ title: string; guidance: string }> | undefined;
+  if (patterns?.length) {
+    lines.push("", "### relevant patterns");
+    for (const pattern of patterns.slice(0, 3)) {
+      lines.push(`- ${pattern.title}: ${pattern.guidance}`);
     }
   }
 

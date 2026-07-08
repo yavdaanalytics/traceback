@@ -76,6 +76,20 @@ CREATE TABLE IF NOT EXISTS tool_invocations (
   baseline_lines INTEGER
 );
 
+CREATE TABLE IF NOT EXISTS coding_patterns (
+  pattern_id INTEGER PRIMARY KEY AUTOINCREMENT,
+  repo_path TEXT NOT NULL,
+  title TEXT NOT NULL,
+  trigger_text TEXT NOT NULL,
+  guidance TEXT NOT NULL,
+  source_session_id TEXT,
+  source_invocation_id INTEGER,
+  promotion_count INTEGER NOT NULL DEFAULT 1,
+  created_at INTEGER NOT NULL,
+  last_matched_at INTEGER,
+  active INTEGER NOT NULL DEFAULT 1
+);
+
 CREATE TABLE IF NOT EXISTS feedback (
   feedback_id INTEGER PRIMARY KEY AUTOINCREMENT,
   invocation_id INTEGER,
@@ -128,6 +142,25 @@ function ensureSearchModeColumn(db: DatabaseSync): void {
   }
 }
 
+function ensureTelemetryResponseColumns(db: DatabaseSync): void {
+  const cols = db.prepare(`PRAGMA table_info(tool_invocations)`).all() as Array<{ name: string }>;
+  const names = new Set(cols.map((c) => c.name));
+  const additions: Array<[string, string]> = [
+    ["response_chars", "INTEGER"],
+    ["response_tokens_est", "INTEGER"],
+    ["baseline_tokens_est", "INTEGER"],
+    ["layer4_skipped", "INTEGER"],
+    ["trigger_score", "REAL"],
+    ["trigger_decision", "TEXT"],
+    ["trigger_terms_count", "INTEGER"],
+  ];
+  for (const [name, type] of additions) {
+    if (!names.has(name)) {
+      db.exec(`ALTER TABLE tool_invocations ADD COLUMN ${name} ${type}`);
+    }
+  }
+}
+
 function ensureSessionPhaseAColumns(db: DatabaseSync): void {
   const cols = db.prepare(`PRAGMA table_info(sessions)`).all() as Array<{ name: string }>;
   const names = new Set(cols.map((c) => c.name));
@@ -166,6 +199,7 @@ export function getDb(dbPath: string): DatabaseSync {
   db.exec(SCHEMA);
   ensurePenaltyWeightColumn(db);
   ensureSearchModeColumn(db);
+  ensureTelemetryResponseColumns(db);
   ensureSessionPhaseAColumns(db);
   dbHandles.set(key, db);
   return db;
@@ -374,6 +408,13 @@ export interface ToolInvocationRow {
   global_lines_skipped: number | null;
   baseline_lines: number | null;
   search_mode: string | null;
+  response_chars: number | null;
+  response_tokens_est: number | null;
+  baseline_tokens_est: number | null;
+  layer4_skipped: number | null;
+  trigger_score: number | null;
+  trigger_decision: string | null;
+  trigger_terms_count: number | null;
 }
 
 // Insert-only - telemetry never updates a row after the fact.
@@ -382,10 +423,14 @@ export function insertToolInvocation(dbPath: string, row: Omit<ToolInvocationRow
     .prepare(
       `INSERT INTO tool_invocations
          (tool_name, mcp_method_name, input_args, started_at, duration_ms, ok, error_message,
-          git_depth_days, matched_ref, delta_window_scale, warm_lines_pulled, global_lines_skipped, baseline_lines, search_mode)
+          git_depth_days, matched_ref, delta_window_scale, warm_lines_pulled, global_lines_skipped, baseline_lines, search_mode,
+          response_chars, response_tokens_est, baseline_tokens_est, layer4_skipped,
+          trigger_score, trigger_decision, trigger_terms_count)
        VALUES
          ($tool_name, $mcp_method_name, $input_args, $started_at, $duration_ms, $ok, $error_message,
-          $git_depth_days, $matched_ref, $delta_window_scale, $warm_lines_pulled, $global_lines_skipped, $baseline_lines, $search_mode)`,
+          $git_depth_days, $matched_ref, $delta_window_scale, $warm_lines_pulled, $global_lines_skipped, $baseline_lines, $search_mode,
+          $response_chars, $response_tokens_est, $baseline_tokens_est, $layer4_skipped,
+          $trigger_score, $trigger_decision, $trigger_terms_count)`,
     )
     .run(row as unknown as Record<string, import("node:sqlite").SQLInputValue>);
   return Number(result.lastInsertRowid);
@@ -571,4 +616,70 @@ export function querySessions(
        FROM sessions s ${where} ORDER BY s.started_at DESC`,
     )
     .all(params) as unknown as SessionRow[];
+}
+
+export interface CodingPatternRow {
+  pattern_id: number;
+  repo_path: string;
+  title: string;
+  trigger_text: string;
+  guidance: string;
+  source_session_id: string | null;
+  source_invocation_id: number | null;
+  promotion_count: number;
+  created_at: number;
+  last_matched_at: number | null;
+  active: number;
+}
+
+export function insertCodingPattern(
+  dbPath: string,
+  row: Omit<CodingPatternRow, "pattern_id" | "promotion_count" | "active" | "last_matched_at">,
+): number {
+  const result = getDb(dbPath)
+    .prepare(
+      `INSERT INTO coding_patterns
+        (repo_path, title, trigger_text, guidance, source_session_id, source_invocation_id, promotion_count, created_at, last_matched_at, active)
+       VALUES
+        ($repo_path, $title, $trigger_text, $guidance, $source_session_id, $source_invocation_id, 1, $created_at, NULL, 1)`,
+    )
+    .run({
+      ...row,
+      source_session_id: row.source_session_id ?? null,
+      source_invocation_id: row.source_invocation_id ?? null,
+    } as unknown as Record<string, import("node:sqlite").SQLInputValue>);
+  return Number(result.lastInsertRowid);
+}
+
+export function listCodingPatterns(dbPath: string, repoPath: string): CodingPatternRow[] {
+  return getDb(dbPath)
+    .prepare(
+      `SELECT * FROM coding_patterns
+       WHERE repo_path = $repo_path AND active = 1
+       ORDER BY COALESCE(last_matched_at, created_at) DESC, pattern_id DESC`,
+    )
+    .all({ repo_path: repoPath }) as unknown as CodingPatternRow[];
+}
+
+export function deactivateCodingPattern(dbPath: string, patternId: number): void {
+  getDb(dbPath)
+    .prepare(`UPDATE coding_patterns SET active = 0 WHERE pattern_id = $pattern_id`)
+    .run({ pattern_id: patternId });
+}
+
+export function touchCodingPattern(dbPath: string, patternId: number): void {
+  getDb(dbPath)
+    .prepare(
+      `UPDATE coding_patterns
+       SET last_matched_at = $now, promotion_count = promotion_count + 1
+       WHERE pattern_id = $pattern_id`,
+    )
+    .run({ pattern_id: patternId, now: Date.now() });
+}
+
+export function countCodingPatterns(dbPath: string, repoPath: string): number {
+  const row = getDb(dbPath)
+    .prepare(`SELECT COUNT(*) AS cnt FROM coding_patterns WHERE repo_path = $repo_path AND active = 1`)
+    .get({ repo_path: repoPath }) as { cnt: number } | undefined;
+  return row?.cnt ?? 0;
 }
