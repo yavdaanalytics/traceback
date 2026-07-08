@@ -35,6 +35,13 @@ export interface TelemetryExtras {
   warmLinesPulled?: number;
   baselineLines?: number; // when set alongside warmLinesPulled, globalLinesSkipped is derived
   mode?: string; // for fallback routing eval signal
+  responseChars?: number;
+  responseTokensEst?: number;
+  baselineTokensEst?: number;
+  layer4Skipped?: boolean;
+  triggerScore?: number;
+  triggerDecision?: "strong" | "weak" | "skip";
+  triggerTermsCount?: number;
 }
 
 type ToolHandler<A, R> = (args: A) => Promise<R> | R;
@@ -74,6 +81,13 @@ export function withTelemetry<A, R>(
         global_lines_skipped: baseline != null && warm != null ? Math.max(0, baseline - warm) : null,
         baseline_lines: baseline ?? null,
         search_mode: extras?.mode ?? null,
+        response_chars: extras?.responseChars ?? null,
+        response_tokens_est: extras?.responseTokensEst ?? null,
+        baseline_tokens_est: extras?.baselineTokensEst ?? null,
+        layer4_skipped: extras?.layer4Skipped == null ? null : extras.layer4Skipped ? 1 : 0,
+        trigger_score: extras?.triggerScore ?? null,
+        trigger_decision: extras?.triggerDecision ?? null,
+        trigger_terms_count: extras?.triggerTermsCount ?? null,
       });
       return result;
     } catch (error) {
@@ -93,6 +107,13 @@ export function withTelemetry<A, R>(
         global_lines_skipped: null,
         baseline_lines: null,
         search_mode: null,
+        response_chars: null,
+        response_tokens_est: null,
+        baseline_tokens_est: null,
+        layer4_skipped: null,
+        trigger_score: null,
+        trigger_decision: null,
+        trigger_terms_count: null,
       });
       throw error;
     }
@@ -136,6 +157,37 @@ export function renderEfficiencyReport(sqlitePath: string, filter: { since?: num
     if (withDepth.length > 0) {
       const avgDepth = withDepth.reduce((s, c) => s + (c.git_depth_days ?? 0), 0) / withDepth.length;
       lines.push(`   avg git depth: ${avgDepth.toFixed(1)} days`);
+    }
+    const withTokens = calls.filter((c) => c.response_tokens_est != null);
+    if (withTokens.length > 0) {
+      const avgReturned = withTokens.reduce((s, c) => s + (c.response_tokens_est ?? 0), 0) / withTokens.length;
+      const baselineRows = withTokens.filter((c) => c.baseline_tokens_est != null);
+      if (baselineRows.length > 0) {
+        const avgBaseline = baselineRows.reduce((s, c) => s + (c.baseline_tokens_est ?? 0), 0) / baselineRows.length;
+        const pct = avgBaseline > 0 ? (100 * avgReturned) / avgBaseline : 0;
+        lines.push(
+          `   tokens: avg ${avgReturned.toFixed(0)} returned vs ${avgBaseline.toFixed(0)} baseline (${pct.toFixed(1)}%)`,
+        );
+      } else {
+        lines.push(`   tokens: avg ${avgReturned.toFixed(0)} returned`);
+      }
+    }
+    const withL4 = calls.filter((c) => c.layer4_skipped != null);
+    if (withL4.length > 0) {
+      const skipped = withL4.filter((c) => c.layer4_skipped === 1).length;
+      lines.push(`   layer4 skipped: ${skipped}/${withL4.length}`);
+    }
+    const withTrigger = calls.filter((c) => c.trigger_decision != null);
+    if (withTrigger.length > 0) {
+      const byDecision = new Map<string, number>();
+      for (const row of withTrigger) {
+        const key = row.trigger_decision ?? "unknown";
+        byDecision.set(key, (byDecision.get(key) ?? 0) + 1);
+      }
+      const distribution = Array.from(byDecision.entries())
+        .map(([decision, count]) => `${decision}:${count}`)
+        .join(", ");
+      lines.push(`   trigger decisions: ${distribution}`);
     }
     lines.push("");
   }

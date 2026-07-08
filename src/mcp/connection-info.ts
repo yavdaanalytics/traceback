@@ -9,6 +9,7 @@ import {
 
 export const TRACEBACK_MCP_TOOLS = [
   "get_connection_info",
+  "get_traceback_status",
   "search_with_fallback",
   "find_similar_sessions",
   "search_dev_history",
@@ -30,6 +31,11 @@ export const TRACEBACK_MCP_TOOLS = [
   "tag_outcome",
   "get_efficiency_report",
   "submit_feedback",
+  "promote_pattern",
+  "list_patterns",
+  "deprecate_pattern",
+  "get_match_details",
+  "get_commit_files",
 ] as const;
 
 export interface ConnectionInfo {
@@ -45,7 +51,11 @@ export interface ConnectionInfo {
     call_mcp_tool: string;
     claude_native_hook: string;
     fallback: string;
+    discovery_hint: string;
   };
+  discovery_recommended: boolean;
+  first_call_tool: string;
+  mandatory_first_tool: string;
 }
 
 export function getConnectionInfo(): ConnectionInfo {
@@ -66,6 +76,11 @@ export function getConnectionInfo(): ConnectionInfo {
       call_mcp_tool: `CallMcpTool server="${callServerId}" toolName="<tool>" (NOT "${TRACEBACK_CONFIG_KEY}" when Cursor global install uses user- prefix).`,
       claude_native_hook: `Native mcp_tool hooks use server="${TRACEBACK_CONFIG_KEY}" (mcp.json config key).`,
       fallback: "If CallMcpTool fails with unknown server, list MCP descriptors under mcps/ for the folder containing search_with_fallback.",
+      discovery_hint:
+        "Use balanced host-first routing (see SKILL.md): strong/weak matches call traceback, clear non-code skips. On deferred-schema hosts, run ToolSearch/select or call get_traceback_status first.",
     },
+    discovery_recommended: true,
+    first_call_tool: "get_traceback_status",
+    mandatory_first_tool: "search_with_fallback",
   };
 }

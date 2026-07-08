@@ -16,6 +16,9 @@ export interface Config {
   dataDir: string;
   sqlitePath: string;
   confidenceThreshold: number;
+  keywordRouterEnabled?: boolean;
+  keywordStrongThreshold?: number;
+  keywordWeakThreshold?: number;
 }
 
 export interface SessionSearchResult extends Omit<TurnEmbeddingRow, "vector"> {

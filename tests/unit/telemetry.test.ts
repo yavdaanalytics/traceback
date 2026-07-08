@@ -129,6 +129,20 @@ describe("withTelemetry", () => {
     expect(rows[0].delta_window_scale).toBeNull();
     expect(rows[0].warm_lines_pulled).toBeNull();
   });
+
+  it("records trigger routing metrics when provided by extractor", async () => {
+    const handler = withTelemetry(
+      dbPath,
+      "test_tool_trigger",
+      async () => ({ content: [{ type: "text", text: "ok" }] }),
+      () => ({ triggerScore: 2.4, triggerDecision: "strong", triggerTermsCount: 3 }),
+    );
+    await handler({});
+    const rows = queryInvocations(dbPath, { toolName: "test_tool_trigger" });
+    expect(rows[0].trigger_score).toBe(2.4);
+    expect(rows[0].trigger_decision).toBe("strong");
+    expect(rows[0].trigger_terms_count).toBe(3);
+  });
 });
 
 describe("renderEfficiencyReport", () => {
@@ -165,5 +179,18 @@ describe("renderEfficiencyReport", () => {
     await handler({});
     const text = renderEfficiencyReport(dbPath, { toolName: "depth_tool" });
     expect(text).toContain("avg git depth: 10.0 days");
+  });
+
+  it("shows trigger decision distribution when available", async () => {
+    const handler = withTelemetry(
+      dbPath,
+      "trigger_dist_tool",
+      async () => ({ content: [{ type: "text", text: "" }] }),
+      () => ({ triggerDecision: "weak" }),
+    );
+    await handler({});
+    await handler({});
+    const text = renderEfficiencyReport(dbPath, { toolName: "trigger_dist_tool" });
+    expect(text).toContain("trigger decisions: weak:2");
   });
 });

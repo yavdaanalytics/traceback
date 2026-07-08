@@ -23,6 +23,17 @@ This installs:
 
 Manual warm-start CLI: `npx traceback-warmstart --format plain --query "your question" --repo-path .`
 
+## Host-first routing (skill gate before MCP)
+
+For hosts that support skill-style routing (for example Claude/Cursor workflows),
+use a **balanced host-first** gate:
+
+- strong keyword/semantic match -> call `search_with_fallback`
+- weak/ambiguous match -> still call `search_with_fallback` (fallback)
+- clear non-code prompt -> skip traceback
+
+Reference metadata schema: [`SKILL.md`](SKILL.md).
+
 ## 2. Using traceback in Your IDE
 
 Once set up, traceback is available as an MCP server in:
@@ -48,6 +59,8 @@ Hosts use **two different names** for traceback:
 - `.cursor/rules/traceback.mdc` — always-on rule with the resolved Cursor `call_server_id`
 
 If an agent call fails with “server does not exist”, call **`get_connection_info`** first (on any listed traceback server) or check the `mcps/` tool descriptors for the folder containing `search_with_fallback`.
+
+For deferred-schema hosts (for example Claude Code), call **`get_traceback_status`** first to get discovery hints, then apply host-first gate behavior before falling back to generic grep/glob.
 
 ### Primary tool: `search_with_fallback`
 
