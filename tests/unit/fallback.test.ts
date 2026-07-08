@@ -33,4 +33,22 @@ describe("search_with_fallback layers", () => {
     expect(result.layers.some((l) => l.layer === 4)).toBe(true);
     expect(result.source_labels).toContain("keyword_search");
   });
+
+  it("emits trigger diagnostics for ambiguous prompts", async () => {
+    vi.mocked(searchGrep).mockReturnValueOnce("src/a.ts:1:match");
+    const result = await searchWithFallback(
+      {
+        repoPath: process.cwd(),
+        dataDir: "/tmp/lance",
+        sqlitePath: "/tmp/db",
+        confidenceThreshold: 0.35,
+        keywordRouterEnabled: true,
+        keywordStrongThreshold: 2.2,
+        keywordWeakThreshold: 0.8,
+      },
+      { query: "why is this broken" },
+    );
+    expect(result.trigger_diagnostics).toBeDefined();
+    expect(result.trigger_diagnostics?.decision).toMatch(/strong|weak|skip/);
+  });
 });

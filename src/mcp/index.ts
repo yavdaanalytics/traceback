@@ -21,6 +21,17 @@ import { getSessionDetail } from "./session-detail.js";
 import { astSymbolSearch } from "../ast/symbol-search.js";
 import { diffSearch, keywordSearch } from "./code-search.js";
 import { getConnectionInfo } from "./connection-info.js";
+import { getCommitFiles, getMatchDetails } from "./match-details.js";
+import { serializeForMCP, summarizeFallbackForAgent } from "./payload-formatter.js";
+import {
+  deactivateCodingPattern,
+  insertCodingPattern,
+  listCodingPatterns,
+  queryInvocations,
+  touchCodingPattern,
+} from "../storage/sqlite.js";
+import { getRelevantPatternsForQuery, suggestPatternsFromInvocations } from "./pattern-suggest.js";
+import { getTracebackStatus } from "./status.js";
 
 const config = resolveConfig();
 
@@ -36,6 +47,18 @@ server.registerTool(
   async () => {
     const info = getConnectionInfo();
     return { content: [{ type: "text", text: JSON.stringify(info, null, 2) }] };
+  },
+);
+
+server.registerTool(
+  "get_traceback_status",
+  {
+    description: "Returns current traceback availability, indexed session counts, and discovery hints for deferred-schema hosts.",
+    inputSchema: { repo_path: z.string().optional() },
+  },
+  async ({ repo_path }) => {
+    const status = getTracebackStatus(config.sqlitePath, repo_path ?? config.repoPath, config.dataDir);
+    return { content: [{ type: "text", text: JSON.stringify(status, null, 2) }] };
   },
 );
 
@@ -502,29 +525,147 @@ server.registerTool(
           dataDir: config.dataDir,
           sqlitePath: config.sqlitePath,
           confidenceThreshold: config.confidenceThreshold,
+          keywordRouterEnabled: config.keywordRouterEnabled,
+          keywordStrongThreshold: config.keywordStrongThreshold,
+          keywordWeakThreshold: config.keywordWeakThreshold,
         },
         { query, pattern, project_path },
       );
-      const payload = wrapWithMeta(result, {
+      const relevantPatterns = getRelevantPatternsForQuery(config.sqlitePath, repo_path ?? config.repoPath, query);
+      const summary = summarizeFallbackForAgent(result, { maxGrepLines: 40, omitEmptyRefinements: true });
+      if (relevantPatterns.length > 0) {
+        summary.relevant_patterns = relevantPatterns;
+        for (const pattern of relevantPatterns) touchCodingPattern(config.sqlitePath, pattern.pattern_id);
+      }
+      const suggestions = suggestPatternsFromInvocations(queryInvocations(config.sqlitePath, { toolName: "search_with_fallback" }));
+      if (suggestions.length > 0) {
+        summary.pattern_suggestions = suggestions;
+      }
+      const payload = wrapWithMeta(summary, {
         source: (result.source_labels[0] ?? "grep_full_repo") as SourceLabel,
         certainty: result.layers[0]?.certainty ?? "deterministic",
       });
-      return { content: [{ type: "text", text: JSON.stringify(payload, null, 2) }] };
+      return { content: [{ type: "text", text: serializeForMCP(payload as unknown as Record<string, unknown>, true) }] };
     },
     (args, result) => {
       const parsed = JSON.parse(result.content[0].text as string) as {
-        data: { mode: string; grep_result: string; git_scope?: Array<{ commit_hash: string; files_changed: string[] }> };
+        data: {
+          mode: string;
+          grep_summary?: { total_hits?: number };
+          git_scope?: { commits?: Array<{ file_count?: number }> };
+          layer4_skipped?: boolean;
+          trigger_diagnostics?: { score?: number; decision?: "strong" | "weak" | "skip"; terms_count?: number };
+        };
       };
       const inner = parsed.data;
-      const filesCount = (inner.git_scope ?? []).reduce((sum, c) => sum + c.files_changed.length, 0);
+      const filesCount = (inner.git_scope?.commits ?? []).reduce((sum, c) => sum + (c.file_count ?? 0), 0);
+      const responseChars = String(result.content[0].text).length;
+      const responseTokensEst = Math.ceil(responseChars / 4);
+      const baselineTokensEst = Math.ceil(JSON.stringify(parsed, null, 2).length / 4);
       return {
         mode: inner.mode,
         deltaWindowScale: filesCount,
-        warmLinesPulled: inner.grep_result.split("\n").filter(Boolean).length,
+        warmLinesPulled: inner.grep_summary?.total_hits ?? 0,
         baselineLines: computeGrepBaseline(args.repo_path ?? config.repoPath, args.pattern ?? args.query),
+        responseChars,
+        responseTokensEst,
+        baselineTokensEst,
+        layer4Skipped: Boolean(inner.layer4_skipped),
+        triggerScore: inner.trigger_diagnostics?.score,
+        triggerDecision: inner.trigger_diagnostics?.decision,
+        triggerTermsCount: inner.trigger_diagnostics?.terms_count,
       };
     },
   ),
+);
+
+server.registerTool(
+  "get_match_details",
+  {
+    description: "Fetches full code snippet around a grep hit on demand.",
+    inputSchema: {
+      file: z.string(),
+      line_start: z.number().int().positive(),
+      line_end: z.number().int().positive(),
+      context_lines: z.number().int().nonnegative().optional().default(3),
+      repo_path: z.string().optional(),
+    },
+  },
+  withTelemetry(config.sqlitePath, "get_match_details", async ({ file, line_start, line_end, context_lines, repo_path }) => {
+    const detail = getMatchDetails(repo_path ?? config.repoPath, file, line_start, line_end, context_lines);
+    return { content: [{ type: "text", text: JSON.stringify(detail, null, 2) }] };
+  }),
+);
+
+server.registerTool(
+  "get_commit_files",
+  {
+    description: "Returns full files_changed list for a commit hash.",
+    inputSchema: {
+      commit_sha: z.string(),
+      repo_path: z.string().optional(),
+    },
+  },
+  withTelemetry(config.sqlitePath, "get_commit_files", async ({ commit_sha, repo_path }) => {
+    const files = getCommitFiles(repo_path ?? config.repoPath, commit_sha);
+    return { content: [{ type: "text", text: JSON.stringify({ commit_sha, files }, null, 2) }] };
+  }),
+);
+
+server.registerTool(
+  "promote_pattern",
+  {
+    description:
+      "Stores a reusable coding pattern. IMPORTANT: call only after explicit user confirmation, mirroring submit_feedback HITL contract.",
+    inputSchema: {
+      title: z.string(),
+      trigger_text: z.string(),
+      guidance: z.string(),
+      source_session_id: z.string().optional(),
+      source_invocation_id: z.number().int().optional(),
+      repo_path: z.string().optional(),
+    },
+  },
+  withTelemetry(
+    config.sqlitePath,
+    "promote_pattern",
+    async ({ title, trigger_text, guidance, source_session_id, source_invocation_id, repo_path }) => {
+      const patternId = insertCodingPattern(config.sqlitePath, {
+        repo_path: repo_path ?? config.repoPath,
+        title,
+        trigger_text,
+        guidance,
+        source_session_id: source_session_id ?? null,
+        source_invocation_id: source_invocation_id ?? null,
+        created_at: Date.now(),
+      });
+      return { content: [{ type: "text", text: JSON.stringify({ pattern_id: patternId }, null, 2) }] };
+    },
+  ),
+);
+
+server.registerTool(
+  "list_patterns",
+  {
+    description: "Lists active promoted coding patterns for this repository.",
+    inputSchema: { repo_path: z.string().optional() },
+  },
+  withTelemetry(config.sqlitePath, "list_patterns", async ({ repo_path }) => {
+    const rows = listCodingPatterns(config.sqlitePath, repo_path ?? config.repoPath);
+    return { content: [{ type: "text", text: JSON.stringify(rows, null, 2) }] };
+  }),
+);
+
+server.registerTool(
+  "deprecate_pattern",
+  {
+    description: "Marks a promoted coding pattern as inactive.",
+    inputSchema: { pattern_id: z.number().int().positive() },
+  },
+  withTelemetry(config.sqlitePath, "deprecate_pattern", async ({ pattern_id }) => {
+    deactivateCodingPattern(config.sqlitePath, pattern_id);
+    return { content: [{ type: "text", text: JSON.stringify({ pattern_id, active: false }, null, 2) }] };
+  }),
 );
 
 server.registerTool(

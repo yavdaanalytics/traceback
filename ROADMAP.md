@@ -11,6 +11,15 @@ Client-facing deferred work and known scalability/security concerns.
 - **Cross-repo submodules** — lineage and recall across git submodules
 - **Cross-worktree lineage** — session/commit graph when the same repo has multiple worktrees
 
+## Token reduction — deferred (post-v1.1)
+
+- `max_output_tokens` budget parameter on `search_with_fallback`
+- Factual fast-path (`is X implemented?`) returning location-only output
+- `change_graph_summary` integration in search funnel (L2.5 from `get_change_graph`)
+- `agent_called_get_details` telemetry to measure whether summary was sufficient
+- Real tokenizer support (tiktoken-class estimator) instead of chars/4
+- Host-native deferred-schema auto-load hooks (Claude Code / other IDE feature work)
+
 ## Client concerns
 
 ### Scalability

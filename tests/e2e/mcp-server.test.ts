@@ -15,7 +15,10 @@ const EXPECTED_TOOLS = [
   "get_change_graph",
   "get_commit_context",
   "get_connection_info",
+  "get_traceback_status",
   "get_efficiency_report",
+  "get_match_details",
+  "get_commit_files",
   "get_session_detail",
   "get_session_lineage",
   "git_history_scope",
@@ -29,6 +32,9 @@ const EXPECTED_TOOLS = [
   "search_with_fallback",
   "submit_feedback",
   "tag_outcome",
+  "promote_pattern",
+  "list_patterns",
+  "deprecate_pattern",
 ].sort();
 
 let repoDir: string;

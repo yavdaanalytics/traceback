@@ -21,6 +21,8 @@ const serverEntryPath = join(distDir, "mcp", "index.js").replace(/\\/g, "/");
 export const TRACEBACK_RULE_MARKER = "<!-- traceback-warm-start -->";
 export const TRACEBACK_SERVER_ID_MARKER = "<!-- traceback-mcp-server-id:";
 const WARM_START_SCRIPT = "warm-start.js";
+const SKILL_FILE_NAME = "SKILL.md";
+const SKILL_MARKER = "<!-- traceback-skill -->";
 
 export function warmStartScriptPath(packageDistDir: string = distDir): string {
   return join(packageDistDir, "cli", WARM_START_SCRIPT).replace(/\\/g, "/");
@@ -30,6 +32,55 @@ export function warmStartCommand(packageDistDir: string, repoRoot: string, forma
   const script = warmStartScriptPath(packageDistDir);
   const repo = repoRoot.replace(/\\/g, "/");
   return `node "${script}" --format ${format} --repo-path "${repo}"`;
+}
+
+function repoSkillSourcePath(repoRoot: string): string {
+  return join(repoRoot, SKILL_FILE_NAME);
+}
+
+function normalizeNewlines(text: string): string {
+  return text.replace(/\r\n/g, "\n");
+}
+
+function writeIfChanged(path: string, content: string): "created" | "updated" | "unchanged" {
+  if (!existsSync(path)) {
+    mkdirSync(dirname(path), { recursive: true });
+    writeFileSync(path, content, "utf-8");
+    return "created";
+  }
+  const existing = normalizeNewlines(readFileSync(path, "utf-8"));
+  const desired = normalizeNewlines(content);
+  if (existing === desired) return "unchanged";
+  writeFileSync(path, content, "utf-8");
+  return "updated";
+}
+
+export function installTracebackSkills(repoRoot: string): void {
+  const sourcePath = repoSkillSourcePath(repoRoot);
+  if (!existsSync(sourcePath)) {
+    console.warn(`traceback: ${SKILL_FILE_NAME} not found at repo root - skipping skill installation`);
+    return;
+  }
+  const source = readFileSync(sourcePath, "utf-8");
+  const content = source.includes(SKILL_MARKER) ? source : `${source.trimEnd()}\n\n${SKILL_MARKER}\n`;
+
+  const projectCursorDir = process.env.TRACEBACK_CURSOR_PROJECT_SKILLS_DIR?.trim() || join(repoRoot, ".cursor", "skills");
+  const globalCursorDir = process.env.TRACEBACK_CURSOR_SKILLS_DIR?.trim() || join(homedir(), ".cursor", "skills");
+  const claudeDir = process.env.TRACEBACK_CLAUDE_SKILLS_DIR?.trim() || join(homedir(), ".claude", "skills");
+  const targets = [
+    { label: "Cursor project", path: join(projectCursorDir, "traceback", SKILL_FILE_NAME) },
+    { label: "Cursor global", path: join(globalCursorDir, "traceback", SKILL_FILE_NAME) },
+    { label: "Claude Code", path: join(claudeDir, "traceback", SKILL_FILE_NAME) },
+  ];
+
+  for (const target of targets) {
+    const result = writeIfChanged(target.path, content);
+    if (result === "unchanged") {
+      console.log(`traceback: ${target.label} skill already up to date at ${target.path}`);
+    } else {
+      console.log(`traceback: ${result} ${target.label} skill at ${target.path}`);
+    }
+  }
 }
 
 function isWarmStartHookEntry(entry: unknown): boolean {
@@ -136,8 +187,9 @@ For **every** user message that is not purely conversational (greetings, thanks,
 1. Use returned \`session_matches\`, \`git_scope\`, and \`grep_result\` to narrow every subsequent read and search.
 2. Prefer scoped tools (\`git_history_scope\`, \`search_sessions_grep\` on narrowed files) before repo-wide grep.
 3. Do not re-run repo-wide \`Grep\`/\`Glob\` when \`search_with_fallback\` already returned scoped hits.
+4. If \`relevant_patterns\` is present, apply that guidance before making edits to avoid repeating known mistakes.
 
-Other useful traceback tools: \`get_connection_info\`, \`find_similar_sessions\`, \`get_session_detail\`, \`get_change_graph\`, \`blame_current\`.
+Other useful traceback tools: \`get_connection_info\`, \`get_traceback_status\`, \`find_similar_sessions\`, \`get_session_detail\`, \`get_change_graph\`, \`blame_current\`.
 `;
 }
 
@@ -639,6 +691,9 @@ function main(): void {
   console.log("\n🎯 Setting up Windsurf integration...");
   setupWindsurfHooks(repoRoot, distDir);
 
+  console.log("\n🎯 Installing traceback skill metadata...");
+  installTracebackSkills(repoRoot);
+
   // Step 3: Check if global hooks are already configured
   console.log("\n📍 Checking MCP server registration...");
   mergeGlobalCursorConfig();
@@ -689,7 +744,8 @@ function main(): void {
         "  • Cursor: beforeReadFile hook + preToolUse Grep/Glob gate + always-on rule (call search_with_fallback first)\n" +
         "  • MCP install registry: ~/.traceback/install.json (use get_connection_info for routing id)\n" +
         "  • VS Code / Copilot / JetBrains Copilot: UserPromptSubmit + PreToolUse hooks in .github/hooks/\n" +
-        "  • Windsurf: pre_user_prompt hook when .windsurf/ is present\n",
+        "  • Windsurf: pre_user_prompt hook when .windsurf/ is present\n" +
+        "  • Traceback SKILL.md installed/updated for Cursor + Claude host skill paths\n",
     );
   }
 }

@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import {
   setupCursorHooks,
+  installTracebackSkills,
   setupVsCodeHooks,
   setupWindsurfHooks,
   TRACEBACK_RULE_MARKER,
@@ -175,5 +176,38 @@ describe("setupWindsurfHooks", () => {
 describe("warmStartScriptPath", () => {
   it("points at cli/warm-start.js under dist", () => {
     expect(warmStartScriptPath("C:/pkg/dist")).toBe("C:/pkg/dist/cli/warm-start.js");
+  });
+});
+
+describe("installTracebackSkills", () => {
+  it("installs skill into detected host paths idempotently", () => {
+    const cursorProjectSkills = join(repoRoot, ".tmp-cursor-project-skills");
+    const cursorGlobalSkills = join(repoRoot, ".tmp-cursor-global-skills");
+    const claudeSkills = join(repoRoot, ".tmp-claude-skills");
+    process.env.TRACEBACK_CURSOR_PROJECT_SKILLS_DIR = cursorProjectSkills;
+    process.env.TRACEBACK_CURSOR_SKILLS_DIR = cursorGlobalSkills;
+    process.env.TRACEBACK_CLAUDE_SKILLS_DIR = claudeSkills;
+    try {
+      const skillSource = "<!-- traceback-skill -->\nname: traceback\n";
+      writeFileSync(join(repoRoot, "SKILL.md"), skillSource, "utf-8");
+
+      installTracebackSkills(repoRoot);
+      const projectPath = join(cursorProjectSkills, "traceback", "SKILL.md");
+      const globalPath = join(cursorGlobalSkills, "traceback", "SKILL.md");
+      const claudePath = join(claudeSkills, "traceback", "SKILL.md");
+      expect(existsSync(projectPath)).toBe(true);
+      expect(existsSync(globalPath)).toBe(true);
+      expect(existsSync(claudePath)).toBe(true);
+      expect(readFileSync(projectPath, "utf-8")).toContain("name: traceback");
+
+      const first = readFileSync(projectPath, "utf-8");
+      installTracebackSkills(repoRoot);
+      const second = readFileSync(projectPath, "utf-8");
+      expect(second).toBe(first);
+    } finally {
+      delete process.env.TRACEBACK_CURSOR_PROJECT_SKILLS_DIR;
+      delete process.env.TRACEBACK_CURSOR_SKILLS_DIR;
+      delete process.env.TRACEBACK_CLAUDE_SKILLS_DIR;
+    }
   });
 });
