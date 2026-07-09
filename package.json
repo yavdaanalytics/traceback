@@ -27,6 +27,7 @@
     "test:regression": "vitest run tests/regression",
     "test:evals": "vitest run tests/evals",
     "bench": "node scripts/bench.mjs",
+    "proof:powerbi": "node scripts/reproduce-powerbi-proof.mjs",
     "phase1:e2e": "node scripts/phase1-e2e.mjs",
     "test:prompt-capture": "vitest run tests/unit/prompt-capture-fixture.test.ts tests/e2e/prompt-capture.test.ts tests/e2e/prompt-capture-mcp.test.ts tests/integration/warm-start-prompt.test.ts",
     "security:sast": "semgrep --config auto --config p/command-injection src --error",
