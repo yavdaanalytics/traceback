@@ -1,5 +1,11 @@
 import { execFileSync } from "node:child_process";
-import { insertToolInvocation, queryInvocations, type ToolInvocationRow } from "../storage/sqlite.js";
+import {
+  insertToolInvocation,
+  queryFeedback,
+  queryInvocations,
+  type FeedbackRow,
+  type ToolInvocationRow,
+} from "../storage/sqlite.js";
 
 // Baseline for line-reduction telemetry only - counts matches across the whole
 // repo via `git grep -c <pattern>` (argv array, per the security rule in
@@ -44,7 +50,127 @@ export interface TelemetryExtras {
   triggerTermsCount?: number;
 }
 
+export interface ToolEfficiencyMetrics {
+  tool_name: string;
+  invocation_count: number;
+  failure_count: number;
+  avg_duration_ms: number;
+  p50_duration_ms: number;
+  p95_duration_ms: number;
+  warm_lines_total: number;
+  baseline_lines_total: number;
+  lines_saved_total: number;
+  line_reduction_pct: number;
+  avg_git_depth_days: number | null;
+  avg_response_tokens_est: number | null;
+  avg_baseline_tokens_est: number | null;
+  token_reduction_pct: number | null;
+  layer4_skipped_count: number;
+  trigger_decision_counts: Record<string, number>;
+}
+
+export interface EfficiencyMetricsReport {
+  total_invocations: number;
+  filter: { since?: number; tool_name?: string };
+  feedback_confirm_count: number;
+  feedback_reject_count: number;
+  tools: ToolEfficiencyMetrics[];
+}
+
 type ToolHandler<A, R> = (args: A) => Promise<R> | R;
+
+function percentile(sorted: number[], p: number): number {
+  if (sorted.length === 0) return 0;
+  const idx = Math.ceil((p / 100) * sorted.length) - 1;
+  return sorted[Math.max(0, Math.min(sorted.length - 1, idx))];
+}
+
+function countFeedback(feedback: FeedbackRow[]): { confirm: number; reject: number } {
+  let confirm = 0;
+  let reject = 0;
+  for (const row of feedback) {
+    if (row.verdict === "confirm") confirm++;
+    else if (row.verdict === "reject") reject++;
+  }
+  return { confirm, reject };
+}
+
+function buildToolMetrics(toolName: string, calls: ToolInvocationRow[]): ToolEfficiencyMetrics {
+  const durations = calls.map((c) => c.duration_ms).sort((a, b) => a - b);
+  const withReduction = calls.filter((c) => c.baseline_lines != null && c.warm_lines_pulled != null);
+  const warmLinesTotal = withReduction.reduce((s, c) => s + (c.warm_lines_pulled ?? 0), 0);
+  const baselineLinesTotal = withReduction.reduce((s, c) => s + (c.baseline_lines ?? 0), 0);
+  const linesSavedTotal = withReduction.reduce((s, c) => s + (c.global_lines_skipped ?? 0), 0);
+  const withDepth = calls.filter((c) => c.git_depth_days != null);
+  const withTokens = calls.filter((c) => c.response_tokens_est != null);
+  const withBaselineTokens = withTokens.filter((c) => c.baseline_tokens_est != null);
+  const triggerDecisionCounts: Record<string, number> = {};
+  let layer4SkippedCount = 0;
+  for (const row of calls) {
+    if (row.layer4_skipped === 1) layer4SkippedCount++;
+    if (row.trigger_decision) {
+      triggerDecisionCounts[row.trigger_decision] = (triggerDecisionCounts[row.trigger_decision] ?? 0) + 1;
+    }
+  }
+  const avgResponseTokens =
+    withTokens.length > 0
+      ? withTokens.reduce((s, c) => s + (c.response_tokens_est ?? 0), 0) / withTokens.length
+      : null;
+  const avgBaselineTokens =
+    withBaselineTokens.length > 0
+      ? withBaselineTokens.reduce((s, c) => s + (c.baseline_tokens_est ?? 0), 0) / withBaselineTokens.length
+      : null;
+  return {
+    tool_name: toolName,
+    invocation_count: calls.length,
+    failure_count: calls.filter((c) => c.ok === 0).length,
+    avg_duration_ms: calls.reduce((s, c) => s + c.duration_ms, 0) / calls.length,
+    p50_duration_ms: percentile(durations, 50),
+    p95_duration_ms: percentile(durations, 95),
+    warm_lines_total: warmLinesTotal,
+    baseline_lines_total: baselineLinesTotal,
+    lines_saved_total: linesSavedTotal,
+    line_reduction_pct: baselineLinesTotal > 0 ? (100 * linesSavedTotal) / baselineLinesTotal : 0,
+    avg_git_depth_days:
+      withDepth.length > 0 ? withDepth.reduce((s, c) => s + (c.git_depth_days ?? 0), 0) / withDepth.length : null,
+    avg_response_tokens_est: avgResponseTokens,
+    avg_baseline_tokens_est: avgBaselineTokens,
+    token_reduction_pct:
+      avgBaselineTokens != null && avgBaselineTokens > 0 && avgResponseTokens != null
+        ? (100 * avgResponseTokens) / avgBaselineTokens
+        : null,
+    layer4_skipped_count: layer4SkippedCount,
+    trigger_decision_counts: triggerDecisionCounts,
+  };
+}
+
+export function buildEfficiencyMetrics(
+  sqlitePath: string,
+  filter: { since?: number; toolName?: string },
+): EfficiencyMetricsReport {
+  const rows = queryInvocations(sqlitePath, filter);
+  const feedback = queryFeedback(sqlitePath);
+  const { confirm, reject } = countFeedback(feedback);
+  const byTool = new Map<string, ToolInvocationRow[]>();
+  for (const row of rows) {
+    const list = byTool.get(row.tool_name) ?? [];
+    list.push(row);
+    byTool.set(row.tool_name, list);
+  }
+  const tools = Array.from(byTool.entries())
+    .map(([toolName, calls]) => buildToolMetrics(toolName, calls))
+    .sort((a, b) => a.tool_name.localeCompare(b.tool_name));
+  return {
+    total_invocations: rows.length,
+    filter: {
+      since: filter.since,
+      tool_name: filter.toolName,
+    },
+    feedback_confirm_count: confirm,
+    feedback_reject_count: reject,
+    tools,
+  };
+}
 
 // Single reusable wrapper applied uniformly to every server.registerTool
 // handler in index.ts. `extract` is an optional per-tool callback run after
@@ -124,71 +250,51 @@ export function withTelemetry<A, R>(
 // text content, mirroring how other tools JSON.stringify or plain-text their
 // output rather than returning structured objects.
 export function renderEfficiencyReport(sqlitePath: string, filter: { since?: number; toolName?: string }): string {
-  const rows = queryInvocations(sqlitePath, filter);
-  if (rows.length === 0) return "No telemetry recorded for the given filter.";
-
-  const byTool = new Map<string, ToolInvocationRow[]>();
-  for (const r of rows) {
-    const list = byTool.get(r.tool_name) ?? [];
-    list.push(r);
-    byTool.set(r.tool_name, list);
-  }
+  const report = buildEfficiencyMetrics(sqlitePath, filter);
+  if (report.total_invocations === 0) return "No telemetry recorded for the given filter.";
 
   const lines: string[] = [];
   lines.push(
-    `Efficiency report (${rows.length} calls${filter.since ? `, since ${new Date(filter.since).toISOString()}` : ""})`,
+    `Efficiency report (${report.total_invocations} calls${filter.since ? `, since ${new Date(filter.since).toISOString()}` : ""})`,
   );
   lines.push("");
-  for (const [tool, calls] of byTool) {
-    const withReduction = calls.filter((c) => c.baseline_lines != null && c.warm_lines_pulled != null);
-    const avgDuration = calls.reduce((s, c) => s + c.duration_ms, 0) / calls.length;
-    const failCount = calls.filter((c) => c.ok === 0).length;
-    lines.push(`## ${tool}  (${calls.length} calls, ${failCount} failed, avg ${avgDuration.toFixed(1)}ms)`);
-    if (withReduction.length > 0) {
-      const totalBaseline = withReduction.reduce((s, c) => s + (c.baseline_lines ?? 0), 0);
-      const totalWarm = withReduction.reduce((s, c) => s + (c.warm_lines_pulled ?? 0), 0);
-      const totalSkipped = withReduction.reduce((s, c) => s + (c.global_lines_skipped ?? 0), 0);
-      const pct = totalBaseline > 0 ? (100 * totalSkipped) / totalBaseline : 0;
+  for (const tool of report.tools) {
+    lines.push(
+      `## ${tool.tool_name}  (${tool.invocation_count} calls, ${tool.failure_count} failed, avg ${tool.avg_duration_ms.toFixed(1)}ms)`,
+    );
+    if (tool.baseline_lines_total > 0) {
       lines.push(
-        `   lines: ${totalWarm} scanned vs ${totalBaseline} baseline -> ${pct.toFixed(1)}% reduction (${totalSkipped} lines saved)`,
+        `   lines: ${tool.warm_lines_total} scanned vs ${tool.baseline_lines_total} baseline -> ${tool.line_reduction_pct.toFixed(1)}% reduction (${tool.lines_saved_total} lines saved)`,
       );
     }
-    const withDepth = calls.filter((c) => c.git_depth_days != null);
-    if (withDepth.length > 0) {
-      const avgDepth = withDepth.reduce((s, c) => s + (c.git_depth_days ?? 0), 0) / withDepth.length;
-      lines.push(`   avg git depth: ${avgDepth.toFixed(1)} days`);
+    if (tool.avg_git_depth_days != null) {
+      lines.push(`   avg git depth: ${tool.avg_git_depth_days.toFixed(1)} days`);
     }
-    const withTokens = calls.filter((c) => c.response_tokens_est != null);
-    if (withTokens.length > 0) {
-      const avgReturned = withTokens.reduce((s, c) => s + (c.response_tokens_est ?? 0), 0) / withTokens.length;
-      const baselineRows = withTokens.filter((c) => c.baseline_tokens_est != null);
-      if (baselineRows.length > 0) {
-        const avgBaseline = baselineRows.reduce((s, c) => s + (c.baseline_tokens_est ?? 0), 0) / baselineRows.length;
-        const pct = avgBaseline > 0 ? (100 * avgReturned) / avgBaseline : 0;
+    if (tool.avg_response_tokens_est != null) {
+      if (tool.avg_baseline_tokens_est != null && tool.token_reduction_pct != null) {
         lines.push(
-          `   tokens: avg ${avgReturned.toFixed(0)} returned vs ${avgBaseline.toFixed(0)} baseline (${pct.toFixed(1)}%)`,
+          `   tokens: avg ${tool.avg_response_tokens_est.toFixed(0)} returned vs ${tool.avg_baseline_tokens_est.toFixed(0)} baseline (${tool.token_reduction_pct.toFixed(1)}%)`,
         );
       } else {
-        lines.push(`   tokens: avg ${avgReturned.toFixed(0)} returned`);
+        lines.push(`   tokens: avg ${tool.avg_response_tokens_est.toFixed(0)} returned`);
       }
     }
-    const withL4 = calls.filter((c) => c.layer4_skipped != null);
-    if (withL4.length > 0) {
-      const skipped = withL4.filter((c) => c.layer4_skipped === 1).length;
-      lines.push(`   layer4 skipped: ${skipped}/${withL4.length}`);
+    if (tool.layer4_skipped_count > 0) {
+      lines.push(`   layer4 skipped: ${tool.layer4_skipped_count}/${tool.invocation_count}`);
     }
-    const withTrigger = calls.filter((c) => c.trigger_decision != null);
-    if (withTrigger.length > 0) {
-      const byDecision = new Map<string, number>();
-      for (const row of withTrigger) {
-        const key = row.trigger_decision ?? "unknown";
-        byDecision.set(key, (byDecision.get(key) ?? 0) + 1);
-      }
-      const distribution = Array.from(byDecision.entries())
-        .map(([decision, count]) => `${decision}:${count}`)
+    const triggerKeys = Object.keys(tool.trigger_decision_counts);
+    if (triggerKeys.length > 0) {
+      const distribution = triggerKeys
+        .map((decision) => `${decision}:${tool.trigger_decision_counts[decision]}`)
         .join(", ");
       lines.push(`   trigger decisions: ${distribution}`);
     }
+    lines.push("");
+  }
+  if (report.feedback_confirm_count > 0 || report.feedback_reject_count > 0) {
+    lines.push(
+      `Feedback: ${report.feedback_confirm_count} confirm, ${report.feedback_reject_count} reject`,
+    );
     lines.push("");
   }
   return lines.join("\n");

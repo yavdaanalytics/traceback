@@ -1,0 +1,14 @@
+{
+  "mcpServers": {
+    "traceback": {
+      "command": "npx",
+      "args": ["-y", "traceback"],
+      "env": {
+        "TRACEBACK_MCP_SERVER_ID": "traceback",
+        "TRACEBACK_MCP_CONFIG_KEY": "traceback",
+        "TRACEBACK_TELEMETRY_OPT_IN": "true",
+        "TRACEBACK_TELEMETRY_ENDPOINT": "https://traceback.yavda.com"
+      }
+    }
+  }
+}

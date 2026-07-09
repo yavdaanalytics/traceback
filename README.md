@@ -2,6 +2,19 @@
 
 Semantic debugger MCP server: helps LLM agents find the right code *fast* by warming up grep with embedding-based context recall, turning a blind O(repo) search into a scoped O(session) search.
 
+## Telemetry Rollout (Phases 1–3)
+
+Open, privacy-first telemetry for proving warm-start effectiveness. **Plain `traceback-setup` keeps sharing OFF by default.** **Plugin installs** (`traceback-setup --plugin`) default sharing **ON** with install-time disclosure and opt-out instructions.
+
+| Phase | Status | Summary |
+|-------|--------|---------|
+| **1 — Local observability** | Implemented | `data/traceback.db`, `traceback-dashboard`, `get_efficiency_report`, `traceback-telemetry export` |
+| **2 — Opt-in anonymous aggregates** | Implemented | `install_id` + daily rollups; opt-in enables daily auto-upload (`upload-due` / MCP startup) or manual `upload` |
+| **3 — Public transparency** | Implemented | Self-hosted `traceback-metrics` + `https://traceback.yavda.com` |
+| **4 — Enterprise mode** | Roadmap | Signed reports, org controls, compliance retention (not in OSS scope) |
+
+Collector API auth remains deferred. Full schema, KPIs, redaction, and cron setup: [`docs/TELEMETRY.md`](docs/TELEMETRY.md).
+
 ## The Problem
 
 When an agent hits a bug or question — "why is this authentication failing?" — the only tools it has are `grep` and `git blame`. Both suffer the same fatal flaw: they're scope-blind. A naive `git grep "token"` across a 100K-line repo returns hundreds of hits, 95% noise. The agent either drowns in context or makes a lucky guess.
@@ -196,6 +209,16 @@ Done. The setup script automatically:
 
 Cursor cannot inject per-prompt context via `beforeSubmitPrompt` (block-only). Enforcement uses the always-on rule plus a `preToolUse` hook that denies `Grep`/`Glob` until `search_with_fallback` runs (`afterMCPExecution` marks the turn).
 
+### Plugin install
+
+After installing the Claude or Cursor plugin package, run per repo:
+
+```sh
+npx traceback-setup --plugin
+```
+
+Plugin setup defaults anonymous sharing **ON** (`[Y/n]`) with full disclosure. Plain `traceback-setup` defaults **OFF** (`[y/N]`).
+
 ### Manual Trigger
 If you need to re-run setup:
 ```sh
@@ -204,7 +227,7 @@ npx traceback-setup
 
 The installation is **idempotent** — safe to run multiple times. It detects existing configurations and skips redundant work.
 
-For troubleshooting or manual setup, see the [full install guide](https://github.com/anthropics/traceback#installation).
+For troubleshooting or manual setup, see [`SETUP.md`](SETUP.md).
 
 ## Development & Observability
 
@@ -215,6 +238,8 @@ npm run bench                 # performance benchmarks at 1k/5k/10k-row scale wi
 npm run security:sast         # static analysis (requires `pip install semgrep`)
 npm run security:audit        # dependency audit
 traceback-dashboard           # launch web dashboard at http://127.0.0.1:5555
+traceback-telemetry status    # local/opt-in telemetry config
+traceback-metrics             # self-hosted public metrics collector (Phase 3)
 ```
 
 ### Security & Quality Gates
@@ -252,6 +277,27 @@ See `CLAUDE.md` for testing architecture, regression pinning, and the hard secur
 - Together: fast + exact.
 
 
+## Telemetry & Privacy
+
+Local telemetry (Phase 1) is always recorded in `data/traceback.db` on your machine. **Anonymous sharing** (Phase 2) is optional.
+
+| Install path | Default sharing | Prompt |
+|--------------|-----------------|--------|
+| `traceback-setup` | OFF | `[y/N]` |
+| `traceback-setup --plugin` | ON | `[Y/n]` |
+
+**Collected when opted in:** invocation counts, latency, warm-start line/token savings, trigger stats, anonymous `install_id`, hashed `repo_hash`, traceback version.
+
+**Never collected:** queries, paths, commits, transcripts, PII.
+
+```sh
+traceback-telemetry status
+traceback-telemetry disable          # opt out anytime
+traceback-telemetry auto-upload off  # manual uploads only
+```
+
+Full schema and redaction policy: [`docs/TELEMETRY.md`](docs/TELEMETRY.md). Plugin installs upload to `https://traceback.yavda.com` when opted in.
+
 ## Contributing
 
 This is an early-stage tool. Feedback, bug reports, and PRs are welcome. Key areas where traceback could improve:
@@ -262,4 +308,4 @@ This is an early-stage tool. Feedback, bug reports, and PRs are welcome. Key are
 
 ---
 
-Built with ❤️ by Anthropic. traceback is an MCP server — it works with any MCP-compatible LLM IDE.
+MIT licensed. See [`LICENSE`](LICENSE). Repository: https://github.com/yavdaanalytics/traceback
