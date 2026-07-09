@@ -12,7 +12,7 @@ import { submitFeedback } from "./feedback.js";
 import { getCommitContext } from "./lineage.js";
 import { getChangeGraph, getSessionLineageFromGraph } from "./change-graph.js";
 import { astSearch, blameCurrent, searchGrep } from "./search.js";
-import { computeGrepBaseline, renderEfficiencyReport, withTelemetry } from "./telemetry.js";
+import { computeGrepBaseline, renderEfficiencyReport, withTelemetry, buildEfficiencyMetrics } from "./telemetry.js";
 import { findSimilarSessionsWithContext } from "./recall.js";
 import { searchWithFallback } from "./fallback.js";
 import { getCommit, getFilesForCommit, getLinksForSession, setOutcome } from "../storage/sqlite.js";
@@ -32,6 +32,9 @@ import {
 } from "../storage/sqlite.js";
 import { getRelevantPatternsForQuery, suggestPatternsFromInvocations } from "./pattern-suggest.js";
 import { getTracebackStatus } from "./status.js";
+import { registerRepo } from "../dashboard/registry.js";
+import { maybeUploadDue } from "../telemetry/auto-upload.js";
+import { ensureTelemetryOptInFromEnv } from "../telemetry/config.js";
 
 const config = resolveConfig();
 
@@ -492,14 +495,20 @@ server.registerTool(
 server.registerTool(
   "get_efficiency_report",
   {
-    description: "Aggregates tool-call telemetry into a text summary.",
+    description: "Aggregates tool-call telemetry into a text or JSON summary.",
     inputSchema: {
       since: z.number().optional(),
       tool_name: z.string().optional(),
+      format: z.enum(["text", "json"]).optional().default("text"),
     },
   },
-  async ({ since, tool_name }) => {
-    const text = renderEfficiencyReport(config.sqlitePath, { since, toolName: tool_name });
+  async ({ since, tool_name, format }) => {
+    const filter = { since, toolName: tool_name };
+    if (format === "json") {
+      const report = buildEfficiencyMetrics(config.sqlitePath, filter);
+      return { content: [{ type: "text", text: JSON.stringify(report, null, 2) }] };
+    }
+    const text = renderEfficiencyReport(config.sqlitePath, filter);
     return { content: [{ type: "text", text }] };
   },
 );
@@ -688,6 +697,13 @@ server.registerTool(
 
 async function main(): Promise<void> {
   availableAdapters();
+  ensureTelemetryOptInFromEnv();
+  registerRepo(config.repoPath);
+  void maybeUploadDue({ sqlitePath: config.sqlitePath, repoPath: config.repoPath }).then((result) => {
+    if (!result.ok && result.error) {
+      console.error(`traceback-telemetry: auto-upload failed: ${result.error}`);
+    }
+  });
   const transport = new StdioServerTransport();
   await server.connect(transport);
 }

@@ -17,3 +17,27 @@ tests/integration/dashboard-server.test.ts
 tests/integration/hook-runtime.test.ts
 requirements/README_REVISED_SECTIONS.md
 requirements/semantic-debugger-feature-list.md
+.env
+
+# Local runtime / dev artifacts
+.warm-start-out.json
+.tmp-setup-skill-check/
+actual_codebase_measures/
+
+# Internal-only docs (keep local; not for public OSS tree)
+ROADMAP.md
+PROMPT.md
+IMPLEMENTATION_*.md
+TOKEN_REDUCTION_IMPLEMENTATION.md
+SETUP_AUTOMATION_SUMMARY.md
+QUICKSTART_ENHANCEMENTS.md
+INSTALLATION_TEST.md
+TUNING_PLAYBOOK.md
+
+# Private ops / infra (use deploy/README.md for public self-host guide)
+deploy/droplet/
+deploy/traefik/
+
+# Machine-specific IDE MCP configs
+.mcp.json
+.vscode/mcp.json

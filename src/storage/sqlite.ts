@@ -444,7 +444,7 @@ export function getToolInvocation(dbPath: string, invocationId: number): ToolInv
 
 export function queryInvocations(
   dbPath: string,
-  filter: { since?: number; toolName?: string },
+  filter: { since?: number; toolName?: string; afterInvocationId?: number },
 ): ToolInvocationRow[] {
   const conditions: string[] = [];
   const params: Record<string, import("node:sqlite").SQLInputValue> = {};
@@ -456,10 +456,27 @@ export function queryInvocations(
     conditions.push("tool_name = $tool_name");
     params.tool_name = filter.toolName;
   }
+  if (filter.afterInvocationId != null) {
+    conditions.push("invocation_id > $after_invocation_id");
+    params.after_invocation_id = filter.afterInvocationId;
+  }
   const where = conditions.length ? `WHERE ${conditions.join(" AND ")}` : "";
   return getDb(dbPath)
     .prepare(`SELECT * FROM tool_invocations ${where} ORDER BY invocation_id ASC`)
     .all(params) as unknown as ToolInvocationRow[];
+}
+
+export function queryFeedback(dbPath: string): FeedbackRow[] {
+  return getDb(dbPath)
+    .prepare(`SELECT * FROM feedback ORDER BY feedback_id ASC`)
+    .all() as unknown as FeedbackRow[];
+}
+
+export function maxInvocationId(dbPath: string): number {
+  const row = getDb(dbPath)
+    .prepare(`SELECT MAX(invocation_id) AS max_id FROM tool_invocations`)
+    .get() as { max_id: number | null } | undefined;
+  return row?.max_id ?? 0;
 }
 
 export interface FeedbackRow {
