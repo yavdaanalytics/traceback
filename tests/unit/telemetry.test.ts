@@ -3,8 +3,8 @@ import { mkdtempSync, rmSync, writeFileSync, mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { execFileSync } from "node:child_process";
-import { computeGrepBaseline, withTelemetry, renderEfficiencyReport } from "../../src/mcp/telemetry.js";
-import { queryInvocations } from "../../src/storage/sqlite.js";
+import { computeGrepBaseline, withTelemetry, renderEfficiencyReport, buildEfficiencyMetrics } from "../../src/mcp/telemetry.js";
+import { insertFeedback, queryInvocations } from "../../src/storage/sqlite.js";
 
 let dbPath: string;
 let tmpDir: string;
@@ -192,5 +192,50 @@ describe("renderEfficiencyReport", () => {
     await handler({});
     const text = renderEfficiencyReport(dbPath, { toolName: "trigger_dist_tool" });
     expect(text).toContain("trigger decisions: weak:2");
+  });
+});
+
+describe("buildEfficiencyMetrics", () => {
+  it("returns empty tools for no matching invocations", () => {
+    const report = buildEfficiencyMetrics(dbPath, { toolName: "missing_tool_xyz" });
+    expect(report.total_invocations).toBe(0);
+    expect(report.tools).toEqual([]);
+  });
+
+  it("computes percentiles and feedback counts", async () => {
+    const handler = withTelemetry(
+      dbPath,
+      "metrics_tool",
+      async () => ({ content: [{ type: "text", text: "a\nb\nc" }] }),
+      () => ({ warmLinesPulled: 3, baselineLines: 30, triggerDecision: "strong" }),
+    );
+    await handler({});
+    await handler({});
+    insertFeedback(dbPath, {
+      invocation_id: queryInvocations(dbPath, { toolName: "metrics_tool" })[0].invocation_id,
+      session_id: null,
+      verdict: "confirm",
+      note: null,
+      created_at: Date.now(),
+    });
+    insertFeedback(dbPath, {
+      invocation_id: null,
+      session_id: "sess-1",
+      verdict: "reject",
+      note: null,
+      created_at: Date.now(),
+    });
+
+    const report = buildEfficiencyMetrics(dbPath, { toolName: "metrics_tool" });
+    expect(report.total_invocations).toBe(2);
+    expect(report.feedback_confirm_count).toBeGreaterThanOrEqual(1);
+    expect(report.feedback_reject_count).toBeGreaterThanOrEqual(1);
+    const tool = report.tools[0];
+    expect(tool.tool_name).toBe("metrics_tool");
+    expect(tool.p50_duration_ms).toBeGreaterThanOrEqual(0);
+    expect(tool.p95_duration_ms).toBeGreaterThanOrEqual(tool.p50_duration_ms);
+    expect(tool.lines_saved_total).toBe(54);
+    expect(tool.line_reduction_pct).toBe(90);
+    expect(tool.trigger_decision_counts.strong).toBe(2);
   });
 });

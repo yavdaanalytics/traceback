@@ -4,6 +4,7 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { execFileSync } from "node:child_process";
 import { homedir } from "node:os";
+import { createInterface } from "node:readline/promises";
 import { installHook, installGlobalHook } from "./install-hook.js";
 import {
   recordHostInstall,
@@ -12,6 +13,12 @@ import {
   TRACEBACK_CONFIG_KEY,
   type InstallScope,
 } from "../install/registry.js";
+import { enableTelemetry, writeTelemetryConfig, readTelemetryConfig } from "../telemetry/config.js";
+import {
+  DEFAULT_TELEMETRY_ENDPOINT,
+  printTelemetryDisclosure,
+  telemetryOptOutInstructions,
+} from "../telemetry/disclosure.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 // This file lives at dist/cli/setup.js at runtime; dist/ is the package root.
@@ -38,6 +45,18 @@ function repoSkillSourcePath(repoRoot: string): string {
   return join(repoRoot, SKILL_FILE_NAME);
 }
 
+function packageSkillSourcePath(packageDistDir: string = distDir): string {
+  return join(dirname(packageDistDir), SKILL_FILE_NAME);
+}
+
+function resolveSkillSourcePath(repoRoot: string, packageDistDir: string = distDir): string | null {
+  const repoPath = repoSkillSourcePath(repoRoot);
+  if (existsSync(repoPath)) return repoPath;
+  const packagePath = packageSkillSourcePath(packageDistDir);
+  if (existsSync(packagePath)) return packagePath;
+  return null;
+}
+
 function normalizeNewlines(text: string): string {
   return text.replace(/\r\n/g, "\n");
 }
@@ -55,10 +74,12 @@ function writeIfChanged(path: string, content: string): "created" | "updated" | 
   return "updated";
 }
 
-export function installTracebackSkills(repoRoot: string): void {
-  const sourcePath = repoSkillSourcePath(repoRoot);
-  if (!existsSync(sourcePath)) {
-    console.warn(`traceback: ${SKILL_FILE_NAME} not found at repo root - skipping skill installation`);
+export function installTracebackSkills(repoRoot: string, packageDistDir: string = distDir): void {
+  const sourcePath = resolveSkillSourcePath(repoRoot, packageDistDir);
+  if (!sourcePath) {
+    console.warn(
+      `traceback: ${SKILL_FILE_NAME} not found at repo root or npm package root - skipping skill installation`,
+    );
     return;
   }
   const source = readFileSync(sourcePath, "utf-8");
@@ -146,14 +167,22 @@ const HOSTS: HostConfig[] = [
   },
 ];
 
-export function serverEntry(callServerId: string = TRACEBACK_CONFIG_KEY): Record<string, unknown> {
+export function serverEntry(
+  callServerId: string = TRACEBACK_CONFIG_KEY,
+  opts?: { pluginInstall?: boolean },
+): Record<string, unknown> {
+  const env: Record<string, string> = {
+    TRACEBACK_MCP_SERVER_ID: callServerId,
+    TRACEBACK_MCP_CONFIG_KEY: TRACEBACK_CONFIG_KEY,
+  };
+  if (opts?.pluginInstall) {
+    env.TRACEBACK_TELEMETRY_OPT_IN = "true";
+    env.TRACEBACK_TELEMETRY_ENDPOINT = DEFAULT_TELEMETRY_ENDPOINT;
+  }
   return {
     command: "node",
     args: [serverEntryPath],
-    env: {
-      TRACEBACK_MCP_SERVER_ID: callServerId,
-      TRACEBACK_MCP_CONFIG_KEY: TRACEBACK_CONFIG_KEY,
-    },
+    env,
   };
 }
 
@@ -197,7 +226,7 @@ export function sameEntry(a: unknown, b: unknown): boolean {
   return JSON.stringify(a) === JSON.stringify(b);
 }
 
-export function mergeHostConfig(repoRoot: string, host: HostConfig): void {
+export function mergeHostConfig(repoRoot: string, host: HostConfig, opts?: { pluginInstall?: boolean }): void {
   const fullPath = join(repoRoot, host.relPath);
   if (!existsSync(fullPath)) {
     console.log(`traceback: ${host.name} config not found at ${host.relPath} - skipping (not detected as in use)`);
@@ -217,7 +246,7 @@ export function mergeHostConfig(repoRoot: string, host: HostConfig): void {
   const servers = (parsed[host.serversKey] as Record<string, unknown> | undefined) ?? {};
   const existing = servers[TRACEBACK_CONFIG_KEY];
   const callServerId = resolveCallServerId(host.hostId, host.scope);
-  const desired = serverEntry(callServerId);
+  const desired = serverEntry(callServerId, { pluginInstall: opts?.pluginInstall });
 
   if (existing !== undefined && !sameEntry(existing, desired) && !entriesCompatible(existing, desired)) {
     console.warn(
@@ -257,7 +286,7 @@ export function mergeHostConfig(repoRoot: string, host: HostConfig): void {
   });
 }
 
-export function mergeGlobalCursorConfig(): void {
+export function mergeGlobalCursorConfig(opts?: { pluginInstall?: boolean }): void {
   const globalPath = join(homedir(), ".cursor", "mcp.json");
   if (!existsSync(globalPath)) {
     console.log("traceback: ~/.cursor/mcp.json not found - skipping global Cursor MCP merge");
@@ -273,7 +302,7 @@ export function mergeGlobalCursorConfig(): void {
   const servers = (parsed.mcpServers as Record<string, unknown> | undefined) ?? {};
   const existing = servers[TRACEBACK_CONFIG_KEY];
   const callServerId = resolveCallServerId("cursor", "global");
-  const desired = serverEntry(callServerId);
+  const desired = serverEntry(callServerId, { pluginInstall: opts?.pluginInstall });
 
   if (existing !== undefined && !sameEntry(existing, desired) && !entriesCompatible(existing, desired)) {
     console.warn(
@@ -665,8 +694,78 @@ export function setupWindsurfHooks(repoRoot: string, packageDistDir: string = di
   console.log("traceback: added pre_user_prompt hook to .windsurf/hooks.json");
 }
 
-function main(): void {
-  const targetRepoPath = process.argv[2] ?? process.cwd();
+function resolveTelemetryEnableEndpoint(pluginDefault: boolean): string | null {
+  const env = process.env.TRACEBACK_TELEMETRY_ENDPOINT?.trim();
+  if (env) return env;
+  return pluginDefault ? DEFAULT_TELEMETRY_ENDPOINT : null;
+}
+
+export async function promptTelemetryOptIn(opts?: { defaultOptIn?: boolean }): Promise<void> {
+  const defaultOptIn = opts?.defaultOptIn ?? false;
+  printTelemetryDisclosure({ pluginDefault: defaultOptIn });
+  for (const line of telemetryOptOutInstructions()) {
+    console.log(`traceback: opt-out — ${line}`);
+  }
+  console.log("");
+
+  const env = process.env.TRACEBACK_TELEMETRY_OPT_IN?.trim().toLowerCase();
+  if (env === "true" || env === "1" || env === "yes") {
+    const config = enableTelemetry(resolveTelemetryEnableEndpoint(defaultOptIn));
+    console.log(
+      `traceback: anonymous telemetry enabled (install_id=${config.install_id}, daily auto-upload on)`,
+    );
+    console.log("traceback: use traceback-telemetry auto-upload off for manual-only uploads");
+    return;
+  }
+  if (env === "false" || env === "0" || env === "no") {
+    console.log("traceback: anonymous telemetry disabled (default)");
+    return;
+  }
+  if (!process.stdin.isTTY) {
+    if (defaultOptIn) {
+      const config = enableTelemetry(resolveTelemetryEnableEndpoint(defaultOptIn));
+      console.log(
+        `traceback: anonymous telemetry enabled (install_id=${config.install_id}, daily auto-upload on)`,
+      );
+      console.log("traceback: use traceback-telemetry auto-upload off for manual-only uploads");
+      return;
+    }
+    console.log("traceback: anonymous telemetry disabled by default (set TRACEBACK_TELEMETRY_OPT_IN=true to enable)");
+    return;
+  }
+  const rl = createInterface({ input: process.stdin, output: process.stdout });
+  try {
+    const prompt = defaultOptIn
+      ? "Share anonymous usage metrics? [Y/n] "
+      : "Share anonymous usage metrics? [y/N] ";
+    const answer = (await rl.question(prompt)).trim().toLowerCase();
+    const enabled = defaultOptIn
+      ? answer === "" || answer === "y" || answer === "yes"
+      : answer === "y" || answer === "yes";
+    if (enabled) {
+      const config = enableTelemetry(resolveTelemetryEnableEndpoint(defaultOptIn));
+      console.log(
+        `traceback: anonymous telemetry enabled (install_id=${config.install_id}, daily auto-upload on)`,
+      );
+      console.log("traceback: use traceback-telemetry auto-upload off for manual-only uploads");
+    } else {
+      writeTelemetryConfig({
+        ...readTelemetryConfig(),
+        opt_in: false,
+        auto_upload: false,
+        declined_sharing: true,
+      });
+      console.log("traceback: anonymous telemetry disabled");
+    }
+  } finally {
+    rl.close();
+  }
+}
+
+async function main(): Promise<void> {
+  const setupArgv = process.argv.filter((arg) => arg !== "--plugin");
+  const pluginInstall = process.argv.includes("--plugin");
+  const targetRepoPath = setupArgv[2] ?? process.cwd();
   const repoRoot = execFileSync("git", ["rev-parse", "--show-toplevel"], {
     cwd: targetRepoPath,
     encoding: "utf-8",
@@ -692,11 +791,11 @@ function main(): void {
   setupWindsurfHooks(repoRoot, distDir);
 
   console.log("\n🎯 Installing traceback skill metadata...");
-  installTracebackSkills(repoRoot);
+  installTracebackSkills(repoRoot, distDir);
 
   // Step 3: Check if global hooks are already configured
   console.log("\n📍 Checking MCP server registration...");
-  mergeGlobalCursorConfig();
+  mergeGlobalCursorConfig({ pluginInstall });
 
   let hasGlobalHooks = false;
   try {
@@ -721,7 +820,7 @@ function main(): void {
   let anyFound = false;
   for (const host of HOSTS) {
     if (existsSync(join(repoRoot, host.relPath))) anyFound = true;
-    mergeHostConfig(repoRoot, host);
+    mergeHostConfig(repoRoot, host, { pluginInstall });
   }
 
   if (!anyFound) {
@@ -748,6 +847,13 @@ function main(): void {
         "  • Traceback SKILL.md installed/updated for Cursor + Claude host skill paths\n",
     );
   }
+
+  if (pluginInstall) {
+    console.log("\n📊 Telemetry (plugin default: ON)");
+  } else {
+    console.log("\n📊 Telemetry opt-in");
+  }
+  await promptTelemetryOptIn({ defaultOptIn: pluginInstall });
 }
 
 // Guarded so tests can import mergeHostConfig/serverEntry/sameEntry/printSnippet
@@ -755,5 +861,8 @@ function main(): void {
 // pattern as install-hook.ts).
 const scriptPath = fileURLToPath(import.meta.url);
 if (process.argv[1] === scriptPath || process.argv[1]?.replace(/\\/g, "/") === scriptPath.replace(/\\/g, "/")) {
-  main();
+  main().catch((error) => {
+    console.error(error instanceof Error ? error.message : String(error));
+    process.exit(1);
+  });
 }

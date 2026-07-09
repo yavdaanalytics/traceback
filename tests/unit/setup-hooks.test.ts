@@ -210,4 +210,30 @@ describe("installTracebackSkills", () => {
       delete process.env.TRACEBACK_CLAUDE_SKILLS_DIR;
     }
   });
+
+  it("falls back to package SKILL.md when repo root has none", () => {
+    const cursorProjectSkills = join(repoRoot, ".tmp-cursor-project-skills-pkg");
+    const fakePkgRoot = join(repoRoot, "fake-npm-pkg");
+    const fakeDist = join(fakePkgRoot, "dist");
+    process.env.TRACEBACK_CURSOR_PROJECT_SKILLS_DIR = cursorProjectSkills;
+    process.env.TRACEBACK_CURSOR_SKILLS_DIR = join(repoRoot, ".tmp-unused-global");
+    process.env.TRACEBACK_CLAUDE_SKILLS_DIR = join(repoRoot, ".tmp-unused-claude");
+    try {
+      mkdirSync(fakeDist, { recursive: true });
+      writeFileSync(
+        join(fakePkgRoot, "SKILL.md"),
+        "<!-- traceback-skill -->\nname: traceback-from-package\n",
+        "utf-8",
+      );
+
+      installTracebackSkills(repoRoot, fakeDist);
+      const projectPath = join(cursorProjectSkills, "traceback", "SKILL.md");
+      expect(existsSync(projectPath)).toBe(true);
+      expect(readFileSync(projectPath, "utf-8")).toContain("name: traceback-from-package");
+    } finally {
+      delete process.env.TRACEBACK_CURSOR_PROJECT_SKILLS_DIR;
+      delete process.env.TRACEBACK_CURSOR_SKILLS_DIR;
+      delete process.env.TRACEBACK_CLAUDE_SKILLS_DIR;
+    }
+  });
 });
