@@ -1,0 +1,27 @@
+{
+  "description": "Redacted telemetry row from a real search_with_fallback run (2026-07-08). No repo paths or PII.",
+  "query": "CIAM authentication tenant isolation",
+  "tool_name": "search_with_fallback",
+  "search_mode": "cold_start_git_scoped",
+  "warm_lines_pulled": 107,
+  "delta_window_scale": 14,
+  "duration_ms": 20059.45,
+  "started_at": "2026-07-08T08:54:30.884Z",
+  "blind_grep": {
+    "pattern": "ciam|authentication|tenant",
+    "lines": 10542,
+    "bytes_estimate": 1200000,
+    "tokens_estimate": 300000
+  },
+  "scoped_grep": {
+    "lines": 107,
+    "bytes": 12965,
+    "tokens_estimate": 3241
+  },
+  "line_reduction_pct": 99.0,
+  "notes": [
+    "warm_lines_pulled counted raw scoped grep lines at measurement time (Jul 2026 telemetry).",
+    "Current traceback caps agent-visible grep hits at 15 (rankGrepHits maxTotal); telemetry uses grep_summary.total_hits.",
+    "Re-runs on a newer checkout of the same private repo may differ (git scope + code churn)."
+  ]
+}

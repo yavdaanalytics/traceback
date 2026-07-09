@@ -90,19 +90,33 @@ Query: "CIAM authentication tenant isolation"
 
 ## Reproducibility
 
-To verify this measurement:
+The measured repo is **private** (not on GitHub). To verify on a local checkout:
 
 ```bash
-cd c:/source/powerbi-embedded-analytics
-
-# Traceback scoped search
-node C:/source/traceback/dist/mcp/index.js  # starts MCP server
-# Call: search_with_fallback({ query: "CIAM authentication tenant isolation" })
-
-# Blind grep baseline
-git grep -i "ciam\|authentication\|tenant" | wc -l
-# Returns: 10,542
+cd traceback
+npm run build
+npm run proof:powerbi
+# or: npm run proof:powerbi -- --repo /path/to/your/checkout
+# or: TRACEBACK_PROOF_REPO=/path/to/checkout npm run proof:powerbi
 ```
+
+Pinned redacted telemetry (no paths/PII): [`fixtures/powerbi-ciam-proof/invocation-1.json`](../fixtures/powerbi-ciam-proof/invocation-1.json).
+
+Manual baseline on the target repo:
+
+```bash
+git grep -i -E "ciam|authentication|tenant" | wc -l
+# Jul 8, 2026: 10,542 lines
+```
+
+---
+
+## Measurement caveats
+
+- **107 lines** = raw scoped `grep_result` line count recorded in local telemetry on 2026-07-08 (`warm_lines_pulled` before payload ranking caps).
+- **Agent-visible hits** are capped at **15** per query (`rankGrepHits` `maxTotal`); current telemetry uses `grep_summary.total_hits` (the capped set).
+- **Re-runs on a newer checkout** may show more scoped lines if git scope widens (e.g. commits that once tracked `data/` still affect `git log -S` pickaxe) or auth code grows.
+- **Blind grep** count uses `ciam|authentication|tenant` (no `isolation`); traceback grep uses `(CIAM)|(authentication)|(tenant)|(isolation)` on git-scoped files only.
 
 ---
 

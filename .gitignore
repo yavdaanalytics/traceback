@@ -22,10 +22,9 @@ requirements/semantic-debugger-feature-list.md
 # Local runtime / dev artifacts
 .warm-start-out.json
 .tmp-setup-skill-check/
-actual_codebase_measures/
 
 # Internal-only docs (keep local; not for public OSS tree)
-ROADMAP.md
+ROADMAP*.md
 PROMPT.md
 IMPLEMENTATION_*.md
 TOKEN_REDUCTION_IMPLEMENTATION.md

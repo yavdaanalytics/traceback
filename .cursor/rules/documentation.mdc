@@ -1,0 +1,24 @@
+---
+description: Documentation layering — where to put README vs SETUP vs docs/ content
+alwaysApply: true
+---
+
+# Documentation policy
+
+Read and follow [`docs/DOCUMENTATION.md`](../docs/DOCUMENTATION.md) before editing any user-facing markdown.
+
+## Quick rules
+
+- **`README.md`** — front door only: what/why, quick start, funnel summary, privacy defaults, doc map. Max ~120 lines.
+- **`SETUP.md`** — install, hooks, per-IDE behavior, CLI flags, doctor.
+- **`docs/API.md`** — MCP tool reference (update when adding tools).
+- **`docs/ARCHITECTURE.md`** — funnel layers, storage, widening vs HITL.
+- **`docs/TELEMETRY.md`** — schema, KPIs, opt-in/out (README keeps defaults table only).
+- **`docs/DEV.md`** — tests, security gates, bench SLAs.
+- **`CLAUDE.md`** — contributor stack and conventions.
+
+Do **not** duplicate long tables across files. Link instead.
+
+When adding an MCP tool: `src/mcp/index.ts` + `tests/contract/` + `docs/API.md`.
+
+`ROADMAP*.md` is gitignored — planning docs stay local; never link from README or other committed docs.

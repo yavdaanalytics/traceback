@@ -1,5 +1,7 @@
 # traceback Setup & Quick Start
 
+> Install and host-specific detail live here — not in `README.md`. Doc policy: [`docs/DOCUMENTATION.md`](docs/DOCUMENTATION.md).
+
 ## Rollout status
 
 | Phase | Status | Commands |
