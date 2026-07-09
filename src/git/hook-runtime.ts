@@ -9,11 +9,18 @@ import { ensureRepoInfoExclude } from "../cli/git-excludes.js";
 
 const ACTIVE_WINDOW_MS = 15 * 60 * 1000;
 
+function formatHookError(error: unknown): string {
+  if (error instanceof Error) {
+    return error.stack ?? error.message;
+  }
+  return String(error);
+}
+
 function logFailure(repoPath: string, error: unknown): void {
   try {
     const logPath = join(repoPath, ".git", "traceback-hook.log");
     mkdirSync(dirname(logPath), { recursive: true });
-    appendFileSync(logPath, `[${new Date().toISOString()}] ${String(error)}\n`);
+    appendFileSync(logPath, `[${new Date().toISOString()}] ${formatHookError(error)}\n`);
   } catch {
     // Never let logging failures surface either.
   }

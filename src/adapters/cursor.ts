@@ -20,7 +20,7 @@ function readVscdbValue(dbPath: string, key: string): string | undefined {
     const row = db.prepare(`SELECT value FROM ItemTable WHERE key = $key`).get({ key }) as
       | { value: string | Buffer }
       | undefined;
-    if (!row) return undefined;
+    if (!row || row.value == null) return undefined;
     return typeof row.value === "string" ? row.value : row.value.toString("utf-8");
   } catch {
     return undefined;
@@ -34,7 +34,7 @@ function readCursorDiskKv(dbPath: string, key: string): string | undefined {
     const row = db.prepare(`SELECT value FROM cursorDiskKV WHERE key = $key`).get({ key }) as
       | { value: string | Buffer }
       | undefined;
-    if (!row) return undefined;
+    if (!row || row.value == null) return undefined;
     return typeof row.value === "string" ? row.value : row.value.toString("utf-8");
   } catch {
     return undefined;
@@ -219,5 +219,19 @@ export function buildCursorFixtureVscdb(dirPath: string, composerData: unknown):
   db.prepare(`INSERT OR REPLACE INTO ItemTable (key, value) VALUES ($key, $value)`).run({
     key: "composer.composerData",
     value: JSON.stringify(composerData),
+  });
+}
+
+/** Test helper: insert a vscdb key with SQL NULL value (regression fixture). */
+export function buildCursorFixtureVscdbNullValue(
+  dirPath: string,
+  key = "composer.composerData",
+): void {
+  mkdirSync(dirPath, { recursive: true });
+  const db = new DatabaseSync(join(dirPath, "state.vscdb"));
+  db.exec(`CREATE TABLE IF NOT EXISTS ItemTable (key TEXT PRIMARY KEY, value BLOB)`);
+  db.prepare(`INSERT OR REPLACE INTO ItemTable (key, value) VALUES ($key, $value)`).run({
+    key,
+    value: null,
   });
 }
