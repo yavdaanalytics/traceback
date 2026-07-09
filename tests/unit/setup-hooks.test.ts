@@ -17,9 +17,11 @@ const fakeDist = "C:/fake/traceback/dist";
 
 beforeEach(() => {
   repoRoot = mkdtempSync(join(tmpdir(), "traceback-setup-hooks-"));
+  process.env.TRACEBACK_DEV = "1";
 });
 
 afterEach(() => {
+  delete process.env.TRACEBACK_DEV;
   try {
     rmSync(repoRoot, { recursive: true, force: true });
   } catch {

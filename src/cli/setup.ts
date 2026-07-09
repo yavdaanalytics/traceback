@@ -19,15 +19,25 @@ import {
   printTelemetryDisclosure,
   telemetryOptOutInstructions,
 } from "../telemetry/disclosure.js";
+import {
+  resolveCommandMode,
+  mcpServerEntryDev,
+  mcpServerEntryPortable,
+  warmStartCommandDev,
+  warmStartCommandPortable,
+} from "./command-paths.js";
+import { applyExcludeMode, type ExcludeMode } from "./git-excludes.js";
+import { printDoctorReport, runSetupDoctor } from "./setup-doctor.js";
+import { mergeClaudeMdOnboarding } from "./claude-md-onboarding.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 // This file lives at dist/cli/setup.js at runtime; dist/ is the package root.
 export const distDir = dirname(__dirname);
-const serverEntryPath = join(distDir, "mcp", "index.js").replace(/\\/g, "/");
 
 export const TRACEBACK_RULE_MARKER = "<!-- traceback-warm-start -->";
 export const TRACEBACK_SERVER_ID_MARKER = "<!-- traceback-mcp-server-id:";
 const WARM_START_SCRIPT = "warm-start.js";
+const WARM_START_BIN = "traceback-warmstart";
 const SKILL_FILE_NAME = "SKILL.md";
 const SKILL_MARKER = "<!-- traceback-skill -->";
 
@@ -35,10 +45,16 @@ export function warmStartScriptPath(packageDistDir: string = distDir): string {
   return join(packageDistDir, "cli", WARM_START_SCRIPT).replace(/\\/g, "/");
 }
 
-export function warmStartCommand(packageDistDir: string, repoRoot: string, format: string): string {
-  const script = warmStartScriptPath(packageDistDir);
-  const repo = repoRoot.replace(/\\/g, "/");
-  return `node "${script}" --format ${format} --repo-path "${repo}"`;
+export function warmStartCommand(
+  packageDistDir: string,
+  format: string,
+  repoRoot?: string,
+): string {
+  const mode = resolveCommandMode(packageDistDir);
+  if (mode === "dev") {
+    return warmStartCommandDev(warmStartScriptPath(packageDistDir), format, repoRoot);
+  }
+  return warmStartCommandPortable(format, repoRoot);
 }
 
 function repoSkillSourcePath(repoRoot: string): string {
@@ -106,9 +122,11 @@ export function installTracebackSkills(repoRoot: string, packageDistDir: string 
 
 function isWarmStartHookEntry(entry: unknown): boolean {
   const e = entry as Record<string, unknown>;
-  if (typeof e.command === "string" && e.command.includes(WARM_START_SCRIPT)) return true;
+  if (typeof e.command === "string") {
+    if (e.command.includes(WARM_START_SCRIPT) || e.command.includes(WARM_START_BIN)) return true;
+  }
   const args = e.args;
-  if (Array.isArray(args) && args.some((a) => typeof a === "string" && a.includes(WARM_START_SCRIPT))) {
+  if (Array.isArray(args) && args.some((a) => typeof a === "string" && (a.includes(WARM_START_SCRIPT) || a.includes(WARM_START_BIN)))) {
     return true;
   }
   return false;
@@ -116,7 +134,11 @@ function isWarmStartHookEntry(entry: unknown): boolean {
 
 function isWarmStartFormatEntry(entry: unknown, format: string): boolean {
   const e = entry as Record<string, unknown>;
-  return typeof e.command === "string" && e.command.includes(WARM_START_SCRIPT) && e.command.includes(format);
+  if (typeof e.command !== "string") return false;
+  return (
+    (e.command.includes(WARM_START_SCRIPT) || e.command.includes(WARM_START_BIN)) &&
+    e.command.includes(format)
+  );
 }
 
 function readJsonObject(path: string): Record<string, unknown> | null {
@@ -169,8 +191,9 @@ const HOSTS: HostConfig[] = [
 
 export function serverEntry(
   callServerId: string = TRACEBACK_CONFIG_KEY,
-  opts?: { pluginInstall?: boolean },
+  opts?: { pluginInstall?: boolean; packageDistDir?: string },
 ): Record<string, unknown> {
+  const packageDistDir = opts?.packageDistDir ?? distDir;
   const env: Record<string, string> = {
     TRACEBACK_MCP_SERVER_ID: callServerId,
     TRACEBACK_MCP_CONFIG_KEY: TRACEBACK_CONFIG_KEY,
@@ -179,17 +202,26 @@ export function serverEntry(
     env.TRACEBACK_TELEMETRY_OPT_IN = "true";
     env.TRACEBACK_TELEMETRY_ENDPOINT = DEFAULT_TELEMETRY_ENDPOINT;
   }
-  return {
-    command: "node",
-    args: [serverEntryPath],
-    env,
-  };
+  const mode = resolveCommandMode(packageDistDir);
+  const entryPath = join(packageDistDir, "mcp", "index.js").replace(/\\/g, "/");
+  const cmd = mode === "dev" ? mcpServerEntryDev(entryPath) : mcpServerEntryPortable();
+  return { ...cmd, env };
 }
 
 function entriesCompatible(existing: unknown, desired: Record<string, unknown>): boolean {
   if (!existing || typeof existing !== "object") return false;
   const entry = existing as Record<string, unknown>;
-  return entry.command === desired.command && JSON.stringify(entry.args) === JSON.stringify(desired.args);
+  if (entry.command === desired.command && JSON.stringify(entry.args) === JSON.stringify(desired.args)) {
+    return true;
+  }
+  // Treat portable npx and dev node entries as compatible when env matches.
+  const portable = mcpServerEntryPortable();
+  const isPortable =
+    (entry.command === portable.command && JSON.stringify(entry.args) === JSON.stringify(portable.args)) ||
+    (entry.command === "node" && Array.isArray(entry.args));
+  const desiredPortable =
+    desired.command === portable.command || (desired.command === "node" && Array.isArray(desired.args));
+  return isPortable && desiredPortable;
 }
 
 export function renderTracebackCursorRule(callServerId: string): string {
@@ -246,7 +278,7 @@ export function mergeHostConfig(repoRoot: string, host: HostConfig, opts?: { plu
   const servers = (parsed[host.serversKey] as Record<string, unknown> | undefined) ?? {};
   const existing = servers[TRACEBACK_CONFIG_KEY];
   const callServerId = resolveCallServerId(host.hostId, host.scope);
-  const desired = serverEntry(callServerId, { pluginInstall: opts?.pluginInstall });
+  const desired = serverEntry(callServerId, { pluginInstall: opts?.pluginInstall, packageDistDir: distDir });
 
   if (existing !== undefined && !sameEntry(existing, desired) && !entriesCompatible(existing, desired)) {
     console.warn(
@@ -288,21 +320,19 @@ export function mergeHostConfig(repoRoot: string, host: HostConfig, opts?: { plu
 
 export function mergeGlobalCursorConfig(opts?: { pluginInstall?: boolean }): void {
   const globalPath = join(homedir(), ".cursor", "mcp.json");
-  if (!existsSync(globalPath)) {
-    console.log("traceback: ~/.cursor/mcp.json not found - skipping global Cursor MCP merge");
-    return;
-  }
+  mkdirSync(dirname(globalPath), { recursive: true });
 
-  const parsed = readJsonObject(globalPath);
-  if (parsed === null) {
+  const existingParsed = readJsonObject(globalPath);
+  if (existingParsed === null && existsSync(globalPath)) {
     console.warn("traceback: ~/.cursor/mcp.json is not valid JSON - skipping global Cursor MCP merge");
     return;
   }
+  const parsed = existingParsed ?? {};
 
   const servers = (parsed.mcpServers as Record<string, unknown> | undefined) ?? {};
   const existing = servers[TRACEBACK_CONFIG_KEY];
   const callServerId = resolveCallServerId("cursor", "global");
-  const desired = serverEntry(callServerId, { pluginInstall: opts?.pluginInstall });
+  const desired = serverEntry(callServerId, { pluginInstall: opts?.pluginInstall, packageDistDir: distDir });
 
   if (existing !== undefined && !sameEntry(existing, desired) && !entriesCompatible(existing, desired)) {
     console.warn(
@@ -332,6 +362,91 @@ export function mergeGlobalCursorConfig(opts?: { pluginInstall?: boolean }): voi
   });
 }
 
+export function mergeGlobalClaudeConfig(opts?: { pluginInstall?: boolean }): void {
+  const globalPath = join(homedir(), ".claude", ".mcp.json");
+  mkdirSync(dirname(globalPath), { recursive: true });
+
+  const existingParsed = readJsonObject(globalPath);
+  if (existingParsed === null && existsSync(globalPath)) {
+    console.warn("traceback: ~/.claude/.mcp.json is not valid JSON - skipping global Claude MCP merge");
+    return;
+  }
+  const parsed = existingParsed ?? {};
+  const servers = (parsed.mcpServers as Record<string, unknown> | undefined) ?? {};
+  const existing = servers[TRACEBACK_CONFIG_KEY];
+  const callServerId = resolveCallServerId("claude", "global");
+  const desired = serverEntry(callServerId, { pluginInstall: opts?.pluginInstall, packageDistDir: distDir });
+
+  if (existing !== undefined && !sameEntry(existing, desired) && !entriesCompatible(existing, desired)) {
+    console.warn(
+      "traceback: ~/.claude/.mcp.json already has a differing traceback entry - leaving as-is but recording install id",
+    );
+  } else {
+    const mergedEntry =
+      existing !== undefined && entriesCompatible(existing, desired)
+        ? { ...(existing as Record<string, unknown>), env: (desired.env as Record<string, string>) }
+        : desired;
+
+    if (existing === undefined || !sameEntry(existing, mergedEntry)) {
+      parsed.mcpServers = { ...servers, [TRACEBACK_CONFIG_KEY]: mergedEntry };
+      writeFileSync(globalPath, `${JSON.stringify(parsed, null, 2)}\n`, "utf-8");
+      console.log(`traceback: merged traceback into ~/.claude/.mcp.json (call_server_id=${callServerId})`);
+    } else {
+      console.log("traceback: ~/.claude/.mcp.json already configured correctly");
+    }
+  }
+
+  recordHostInstall("claude-global", {
+    config_key: TRACEBACK_CONFIG_KEY,
+    call_server_id: callServerId,
+    scope: "global",
+    config_path: globalPath,
+    hook_server_id: TRACEBACK_CONFIG_KEY,
+  });
+}
+
+export function setupGlobalCursorHooks(packageDistDir: string = distDir): void {
+  const hooksPath = join(homedir(), ".cursor", "hooks.json");
+  mkdirSync(dirname(hooksPath), { recursive: true });
+
+  const parsed = readJsonObject(hooksPath) ?? {};
+  if (parsed.version === undefined) parsed.version = 1;
+
+  const beforeRead = ensureHookArray(parsed, "hooks", "beforeReadFile");
+  const warmEntry = { command: warmStartCommand(packageDistDir, "cursor-read"), timeout: 90 };
+  if (!beforeRead.some(isWarmStartHookEntry)) {
+    beforeRead.push(warmEntry);
+    console.log("traceback: added global beforeReadFile hook to ~/.cursor/hooks.json");
+  } else {
+    console.log("traceback: global Cursor beforeReadFile warm-start hook already exists");
+  }
+
+  const preToolUse = ensureHookArray(parsed, "hooks", "preToolUse");
+  const gateEntry = {
+    command: warmStartCommand(packageDistDir, "cursor-gate"),
+    matcher: "Grep|Glob",
+    timeout: 10,
+  };
+  if (!preToolUse.some((e) => isWarmStartFormatEntry(e, "cursor-gate"))) {
+    preToolUse.push(gateEntry);
+    console.log("traceback: added global preToolUse Grep/Glob gate to ~/.cursor/hooks.json");
+  }
+
+  const afterMcp = ensureHookArray(parsed, "hooks", "afterMCPExecution");
+  const mcpMarkEntry = {
+    command: warmStartCommand(packageDistDir, "cursor-mcp-mark"),
+    matcher: "search_with_fallback",
+    timeout: 10,
+  };
+  if (!afterMcp.some((e) => isWarmStartFormatEntry(e, "cursor-mcp-mark"))) {
+    afterMcp.push(mcpMarkEntry);
+    console.log("traceback: added global afterMCPExecution marker to ~/.cursor/hooks.json");
+  }
+
+  writeFileSync(hooksPath, `${JSON.stringify(parsed, null, 2)}\n`, "utf-8");
+  console.log(`traceback: configured global Cursor hooks at ${hooksPath}`);
+}
+
 export function printSnippet(host: HostConfig): void {
   const callServerId = resolveCallServerId(host.hostId, host.scope);
   console.log(
@@ -339,17 +454,16 @@ export function printSnippet(host: HostConfig): void {
   );
 }
 
-export function setupGlobalHooks(): void {
+export function setupGlobalHooks(opts?: { chainHooks?: boolean; packageDistDir?: string }): void {
+  const packageDistDir = opts?.packageDistDir ?? distDir;
   const globalHooksDir = resolve(homedir(), ".traceback", "hooks");
   const globalHooksPath = globalHooksDir.replace(/\\/g, "/");
 
-  // Create global hooks directory
   if (!existsSync(globalHooksDir)) {
     mkdirSync(globalHooksDir, { recursive: true });
     console.log(`traceback: created global hooks directory at ${globalHooksDir}`);
   }
 
-  // Check if global core.hooksPath is already set
   let existingHooksPath = "";
   try {
     existingHooksPath = execFileSync("git", ["config", "--global", "core.hooksPath"], {
@@ -360,23 +474,32 @@ export function setupGlobalHooks(): void {
     // No global hooksPath configured yet
   }
 
-  if (existingHooksPath && existingHooksPath !== globalHooksPath) {
-    console.warn(
-      `traceback: global core.hooksPath already configured at ${existingHooksPath} - ` +
-        `not overwriting. If you want traceback hooks to run globally, update it manually or unset it first.`,
+  if (existingHooksPath && existingHooksPath.replace(/\\/g, "/") !== globalHooksPath) {
+    if (!opts?.chainHooks) {
+      console.warn(
+        `traceback: global core.hooksPath already configured at ${existingHooksPath} - ` +
+          `not overwriting. Re-run with --chain-hooks to chain the existing post-commit hook, ` +
+          `or unset core.hooksPath first.`,
+      );
+      return;
+    }
+    installGlobalHook({ chainFrom: existingHooksPath, packageDistDir });
+    execFileSync("git", ["config", "--global", "core.hooksPath", globalHooksPath], {
+      encoding: "utf-8",
+    });
+    console.log(
+      `traceback: chained existing hooks at ${existingHooksPath} and set core.hooksPath to ${globalHooksPath}`,
     );
     return;
   }
 
-  if (existingHooksPath === globalHooksPath) {
+  if (existingHooksPath.replace(/\\/g, "/") === globalHooksPath) {
+    installGlobalHook({ packageDistDir });
     console.log(`traceback: global core.hooksPath already configured correctly at ${globalHooksPath}`);
     return;
   }
 
-  // Install the global post-commit hook
-  installGlobalHook();
-
-  // Set global core.hooksPath
+  installGlobalHook({ packageDistDir });
   execFileSync("git", ["config", "--global", "core.hooksPath", globalHooksPath], {
     encoding: "utf-8",
   });
@@ -386,7 +509,7 @@ export function setupGlobalHooks(): void {
   );
 }
 
-export function setupClaudeCodeHooks(repoRoot: string): void {
+export function setupClaudeCodeHooks(repoRoot: string, opts?: { global?: boolean }): void {
   const claudeSettingsPath = resolve(homedir(), ".claude", "settings.json");
   let settings: Record<string, unknown> = {};
 
@@ -446,6 +569,8 @@ export function setupClaudeCodeHooks(repoRoot: string): void {
     );
   }
 
+  const repoPathValue = opts?.global ? "${cwd}" : repoRoot.replace(/\\/g, "/");
+
   // UserPromptSubmit hook for traceback search_with_fallback
   const userPromptMatcher = getOrCreateMatcher("UserPromptSubmit", "*");
   if (!hookExists(userPromptMatcher.hooks, "search_with_fallback")) {
@@ -455,7 +580,7 @@ export function setupClaudeCodeHooks(repoRoot: string): void {
       tool: "search_with_fallback",
       input: {
         query: "${user_input}",
-        repo_path: repoRoot.replace(/\\/g, "/"),
+        repo_path: repoPathValue,
       },
       statusMessage: "Warming up traceback context...",
       async: true,
@@ -475,7 +600,7 @@ export function setupClaudeCodeHooks(repoRoot: string): void {
       tool: "search_with_fallback",
       input: {
         query: "${tool_input.file_path}",
-        repo_path: repoRoot.replace(/\\/g, "/"),
+        repo_path: repoPathValue,
       },
       statusMessage: "Scoping search context...",
       async: true,
@@ -514,7 +639,7 @@ export function setupCursorHooks(repoRoot: string, packageDistDir: string = dist
 
   if (parsed.version === undefined) parsed.version = 1;
   const beforeRead = ensureHookArray(parsed, "hooks", "beforeReadFile");
-  const warmEntry = { command: warmStartCommand(packageDistDir, repoRoot, "cursor-read"), timeout: 90 };
+  const warmEntry = { command: warmStartCommand(packageDistDir, "cursor-read", repoRoot), timeout: 90 };
 
   if (!beforeRead.some(isWarmStartHookEntry)) {
     beforeRead.push(warmEntry);
@@ -526,7 +651,7 @@ export function setupCursorHooks(repoRoot: string, packageDistDir: string = dist
 
   const preToolUse = ensureHookArray(parsed, "hooks", "preToolUse");
   const gateEntry = {
-    command: warmStartCommand(packageDistDir, repoRoot, "cursor-gate"),
+    command: warmStartCommand(packageDistDir, "cursor-gate", repoRoot),
     matcher: "Grep|Glob",
     timeout: 10,
   };
@@ -540,7 +665,7 @@ export function setupCursorHooks(repoRoot: string, packageDistDir: string = dist
 
   const afterMcp = ensureHookArray(parsed, "hooks", "afterMCPExecution");
   const mcpMarkEntry = {
-    command: warmStartCommand(packageDistDir, repoRoot, "cursor-mcp-mark"),
+    command: warmStartCommand(packageDistDir, "cursor-mcp-mark", repoRoot),
     matcher: "search_with_fallback",
     timeout: 10,
   };
@@ -592,7 +717,7 @@ export function setupVsCodeHooks(repoRoot: string, packageDistDir: string = dist
   const readHooks = (hooks.PreToolUse as unknown[] | undefined) ?? [];
   hooks.PreToolUse = readHooks;
 
-  const cmd = warmStartCommand(packageDistDir, repoRoot, "vscode");
+  const cmd = warmStartCommand(packageDistDir, "vscode", repoRoot);
   const promptEntry = { type: "command", command: cmd, timeout: 90 };
   const readEntry = { type: "command", matcher: "Read", command: cmd, timeout: 90 };
 
@@ -682,7 +807,7 @@ export function setupWindsurfHooks(repoRoot: string, packageDistDir: string = di
   }
 
   const prePrompt = ensureHookArray(parsed, "hooks", "pre_user_prompt");
-  const warmEntry = { command: warmStartCommand(packageDistDir, repoRoot, "windsurf"), timeout: 90 };
+  const warmEntry = { command: warmStartCommand(packageDistDir, "windsurf", repoRoot), timeout: 90 };
 
   if (prePrompt.some(isWarmStartHookEntry)) {
     console.log("traceback: Windsurf pre_user_prompt warm-start hook already exists");
@@ -762,40 +887,151 @@ export async function promptTelemetryOptIn(opts?: { defaultOptIn?: boolean }): P
   }
 }
 
-async function main(): Promise<void> {
-  const setupArgv = process.argv.filter((arg) => arg !== "--plugin");
-  const pluginInstall = process.argv.includes("--plugin");
-  const targetRepoPath = setupArgv[2] ?? process.cwd();
-  const repoRoot = execFileSync("git", ["rev-parse", "--show-toplevel"], {
-    cwd: targetRepoPath,
-    encoding: "utf-8",
-  }).trim();
+interface SetupCliOptions {
+  pluginInstall: boolean;
+  repoOnly: boolean;
+  doctor: boolean;
+  chainHooks: boolean;
+  allRepos: boolean | null;
+  excludeMode: ExcludeMode | null;
+  skipClaudeMd: boolean;
+  claudeMdOnly: boolean;
+  targetRepoPath: string;
+}
 
-  console.log("\n📦 Traceback Installation\n");
+function parseSetupCli(argv: string[]): SetupCliOptions {
+  const pluginInstall = argv.includes("--plugin");
+  const repoOnly = argv.includes("--repo-only");
+  const doctor = argv.includes("--doctor");
+  const chainHooks = argv.includes("--chain-hooks");
+  const useGitignore = argv.includes("--use-gitignore");
+  const skipClaudeMd = argv.includes("--skip-claude-md");
+  const claudeMdOnly = argv.includes("--claude-md-only");
+  const filtered = argv.filter(
+    (a) =>
+      ![
+        "--plugin",
+        "--repo-only",
+        "--doctor",
+        "--chain-hooks",
+        "--use-gitignore",
+        "--yes-all-repos",
+        "--no-all-repos",
+        "--skip-claude-md",
+        "--claude-md-only",
+      ].includes(a) && !a.startsWith("--exclude-mode="),
+  );
 
-  // Step 1: Set up global git hooks
-  console.log("🔧 Setting up global git hooks...");
-  setupGlobalHooks();
+  let allRepos: boolean | null = null;
+  if (argv.includes("--yes-all-repos")) allRepos = true;
+  if (argv.includes("--no-all-repos")) allRepos = false;
+  const envAll = process.env.TRACEBACK_SETUP_ALL_REPOS?.trim().toLowerCase();
+  if (envAll === "true" || envAll === "1" || envAll === "yes") allRepos = true;
+  if (envAll === "false" || envAll === "0" || envAll === "no") allRepos = false;
 
-  // Step 2: Set up Claude Code hooks
-  console.log("\n🎯 Setting up Claude Code integration...");
-  setupClaudeCodeHooks(repoRoot);
+  let excludeMode: ExcludeMode | null = null;
+  if (useGitignore) excludeMode = "gitignore";
+  const excludeArg = argv.find((a) => a.startsWith("--exclude-mode="));
+  if (excludeArg) {
+    const mode = excludeArg.split("=")[1] as ExcludeMode;
+    if (mode === "global" || mode === "local" || mode === "gitignore") excludeMode = mode;
+  }
+  const envExclude = process.env.TRACEBACK_EXCLUDE_MODE?.trim().toLowerCase();
+  if (envExclude === "global" || envExclude === "local" || envExclude === "gitignore") {
+    excludeMode = envExclude;
+  }
 
-  console.log("\n🎯 Setting up Cursor integration...");
+  const targetRepoPath = filtered[2] ?? process.cwd();
+  return {
+    pluginInstall,
+    repoOnly: repoOnly || claudeMdOnly,
+    doctor,
+    chainHooks,
+    allRepos,
+    excludeMode,
+    skipClaudeMd,
+    claudeMdOnly,
+    targetRepoPath,
+  };
+}
+
+async function promptAllRepos(defaultYes: boolean): Promise<boolean> {
+  const env = process.env.TRACEBACK_SETUP_ALL_REPOS?.trim().toLowerCase();
+  if (env === "true" || env === "1" || env === "yes") return true;
+  if (env === "false" || env === "0" || env === "no") return false;
+  if (!process.stdin.isTTY) return defaultYes;
+
+  const rl = createInterface({ input: process.stdin, output: process.stdout });
+  try {
+    const answer = (await rl.question("Enable traceback for ALL repositories on this machine? [Y/n] ")).trim().toLowerCase();
+    return answer === "" || answer === "y" || answer === "yes";
+  } finally {
+    rl.close();
+  }
+}
+
+async function promptExcludeMode(defaultMode: ExcludeMode): Promise<ExcludeMode> {
+  if (!process.stdin.isTTY) return defaultMode;
+  const rl = createInterface({ input: process.stdin, output: process.stdout });
+  try {
+    const answer = (
+      await rl.question("Git exclude strategy: [G]lobal exclude (default) | [L]ocal info/exclude | [T]eam gitignore: ")
+    )
+      .trim()
+      .toLowerCase();
+    if (answer === "l" || answer === "local") return "local";
+    if (answer === "t" || answer === "gitignore" || answer === "team") return "gitignore";
+    return "global";
+  } finally {
+    rl.close();
+  }
+}
+
+async function promptClaudeMdOnboarding(defaultYes: boolean): Promise<boolean> {
+  if (!process.stdin.isTTY) return defaultYes;
+  const rl = createInterface({ input: process.stdin, output: process.stdout });
+  try {
+    const answer = (
+      await rl.question("Also add traceback onboarding to CLAUDE.md in the current repo? [Y/n] ")
+    )
+      .trim()
+      .toLowerCase();
+    return answer === "" || answer === "y" || answer === "yes";
+  } finally {
+    rl.close();
+  }
+}
+
+function applyClaudeMdOnboarding(repoRoot: string, opts: SetupCliOptions): void {
+  if (opts.skipClaudeMd) {
+    console.log("traceback: skipping CLAUDE.md onboarding (--skip-claude-md)");
+    return;
+  }
+  const result = mergeClaudeMdOnboarding(repoRoot, { pluginInstall: opts.pluginInstall });
+  if (result.changed === "unchanged") {
+    console.log(`traceback: CLAUDE.md onboarding already up to date at ${result.path}`);
+  } else {
+    console.log(`traceback: ${result.changed} CLAUDE.md onboarding at ${result.path}`);
+  }
+}
+
+function setupRepoOnly(repoRoot: string, opts: SetupCliOptions): void {
+  console.log("\n📦 Traceback per-repo setup\n");
+
+  if (opts.claudeMdOnly) {
+    applyClaudeMdOnboarding(repoRoot, opts);
+    console.log("\n✅ CLAUDE.md onboarding complete.");
+    return;
+  }
+
+  const excludeMode = opts.excludeMode ?? "local";
+  for (const note of applyExcludeMode(excludeMode, repoRoot)) {
+    console.log(`traceback: ${note}`);
+  }
+
   setupCursorHooks(repoRoot, distDir);
-
-  console.log("\n🎯 Setting up VS Code / Copilot integration...");
   setupVsCodeHooks(repoRoot, distDir);
-
-  console.log("\n🎯 Setting up Windsurf integration...");
   setupWindsurfHooks(repoRoot, distDir);
-
-  console.log("\n🎯 Installing traceback skill metadata...");
-  installTracebackSkills(repoRoot, distDir);
-
-  // Step 3: Check if global hooks are already configured
-  console.log("\n📍 Checking MCP server registration...");
-  mergeGlobalCursorConfig({ pluginInstall });
 
   let hasGlobalHooks = false;
   try {
@@ -803,16 +1039,13 @@ async function main(): Promise<void> {
       encoding: "utf-8",
       stdio: ["pipe", "pipe", "pipe"],
     }).trim();
-    if (globalHooksPath) {
-      console.log(`traceback: detected global core.hooksPath at ${globalHooksPath}`);
-      hasGlobalHooks = true;
-    }
+    if (globalHooksPath) hasGlobalHooks = true;
   } catch {
-    // No global hooksPath configured - will install per-repo hook
+    // not set
   }
 
   if (!hasGlobalHooks) {
-    installHook(repoRoot);
+    installHook(repoRoot, distDir);
   } else {
     console.log("traceback: skipping per-repo hook installation (global hooks already configured)");
   }
@@ -820,40 +1053,117 @@ async function main(): Promise<void> {
   let anyFound = false;
   for (const host of HOSTS) {
     if (existsSync(join(repoRoot, host.relPath))) anyFound = true;
-    mergeHostConfig(repoRoot, host, { pluginInstall });
+    mergeHostConfig(repoRoot, host, { pluginInstall: opts.pluginInstall });
   }
+
+  applyClaudeMdOnboarding(repoRoot, opts);
 
   if (!anyFound) {
     console.log(
       "\n⚠️  No known host config files were detected in this repo. " +
-        "Create one of the files below (or your MCP client's config) and re-run traceback-setup, " +
-        "or add the entry manually:",
+        "Run `traceback-setup` without --repo-only for global MCP, or add MCP config manually:",
     );
     for (const host of HOSTS) {
       console.log(`\n${host.name} (${host.relPath}):`);
       printSnippet(host);
     }
   } else {
-    console.log("\n✅ Traceback installation complete!");
-    console.log(
-      "\n💡 What just happened:\n" +
-        "  • Global git hooks are now set up at ~/.traceback/hooks\n" +
-        "  • Your post-commit hook will run on all commits across repositories\n" +
-        "  • Claude Code: UserPromptSubmit + PreToolUse warm-start via native MCP hooks\n" +
-        "  • Cursor: beforeReadFile hook + preToolUse Grep/Glob gate + always-on rule (call search_with_fallback first)\n" +
-        "  • MCP install registry: ~/.traceback/install.json (use get_connection_info for routing id)\n" +
-        "  • VS Code / Copilot / JetBrains Copilot: UserPromptSubmit + PreToolUse hooks in .github/hooks/\n" +
-        "  • Windsurf: pre_user_prompt hook when .windsurf/ is present\n" +
-        "  • Traceback SKILL.md installed/updated for Cursor + Claude host skill paths\n",
-    );
+    console.log("\n✅ Per-repo traceback setup complete.");
+  }
+}
+
+async function setupAllRepos(repoRoot: string, opts: SetupCliOptions): Promise<void> {
+  console.log("\n📦 Traceback global setup (all repositories)\n");
+
+  const excludeMode = opts.excludeMode ?? (await promptExcludeMode("global"));
+  for (const note of applyExcludeMode(excludeMode, repoRoot)) {
+    console.log(`traceback: ${note}`);
   }
 
-  if (pluginInstall) {
-    console.log("\n📊 Telemetry (plugin default: ON)");
+  console.log("🔧 Setting up global git hooks...");
+  setupGlobalHooks({ chainHooks: opts.chainHooks, packageDistDir: distDir });
+
+  console.log("\n📍 Configuring global MCP servers...");
+  mergeGlobalCursorConfig({ pluginInstall: opts.pluginInstall });
+  mergeGlobalClaudeConfig({ pluginInstall: opts.pluginInstall });
+
+  console.log("\n🎯 Setting up global Cursor hooks...");
+  setupGlobalCursorHooks(distDir);
+
+  console.log("\n🎯 Setting up Claude Code integration...");
+  setupClaudeCodeHooks(repoRoot, { global: true });
+
+  console.log("\n🎯 Installing traceback skill metadata...");
+  installTracebackSkills(repoRoot, distDir);
+
+  console.log("\n🩺 Running setup doctor...");
+  printDoctorReport(runSetupDoctor(repoRoot));
+
+  if (await promptClaudeMdOnboarding(true)) {
+    applyClaudeMdOnboarding(repoRoot, opts);
+  }
+
+  console.log(
+    "\n✅ Global traceback setup complete!\n" +
+      "  • Portable MCP: npx -y traceback (Cursor ~/.cursor/mcp.json, Claude ~/.claude/.mcp.json)\n" +
+      "  • Global git hooks: ~/.traceback/hooks (post-commit indexing on every repo)\n" +
+      "  • Global Cursor hooks: ~/.cursor/hooks.json (repo resolved from workspace_roots)\n" +
+      "  • Claude Code: ~/.claude/settings.json warm-start hooks\n" +
+      "  • Skills: ~/.cursor/skills/traceback and ~/.claude/skills/traceback\n" +
+      "  • Per-repo host files are optional — MCP and hooks work without per-repo setup\n" +
+      "  • Run `traceback-setup --repo-only` in each repo to merge MCP configs and add CLAUDE.md onboarding\n",
+  );
+}
+
+async function main(): Promise<void> {
+  const opts = parseSetupCli(process.argv);
+
+  if (opts.doctor) {
+    let repoRoot: string | undefined;
+    try {
+      repoRoot = execFileSync("git", ["rev-parse", "--show-toplevel"], {
+        cwd: opts.targetRepoPath,
+        encoding: "utf-8",
+      }).trim();
+    } catch {
+      repoRoot = undefined;
+    }
+    const report = runSetupDoctor(repoRoot);
+    printDoctorReport(report);
+    process.exitCode = report.ok ? 0 : 1;
+    return;
+  }
+
+  const repoRoot = execFileSync("git", ["rev-parse", "--show-toplevel"], {
+    cwd: opts.targetRepoPath,
+    encoding: "utf-8",
+  }).trim();
+
+  if (opts.repoOnly) {
+    setupRepoOnly(repoRoot, opts);
   } else {
+    const allRepos = opts.allRepos ?? (await promptAllRepos(true));
+    if (allRepos) {
+      await setupAllRepos(repoRoot, opts);
+    } else {
+      console.log(
+        "\nSkipping global setup.\n" +
+          "Run per-repo setup from each git repository:\n" +
+          "  npx traceback-setup --repo-only\n" +
+          "Or re-run global setup:\n" +
+          "  traceback-setup --yes-all-repos\n",
+      );
+    }
+  }
+
+  if (opts.pluginInstall) {
+    console.log("\n📊 Telemetry (plugin default: ON)");
+  } else if (!opts.claudeMdOnly) {
     console.log("\n📊 Telemetry opt-in");
   }
-  await promptTelemetryOptIn({ defaultOptIn: pluginInstall });
+  if (!opts.claudeMdOnly) {
+    await promptTelemetryOptIn({ defaultOptIn: opts.pluginInstall });
+  }
 }
 
 // Guarded so tests can import mergeHostConfig/serverEntry/sameEntry/printSnippet
