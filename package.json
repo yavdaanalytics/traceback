@@ -10,6 +10,7 @@
     "traceback-install-global-hook": "dist/cli/install-global-hook.js",
     "traceback-setup": "dist/cli/setup.js",
     "traceback-warmstart": "dist/cli/warm-start.js",
+    "traceback-hook-entry": "dist/cli/hook-entry.js",
     "traceback-dashboard": "dist/cli/dashboard.js",
     "traceback-telemetry": "dist/cli/telemetry.js",
     "traceback-metrics": "dist/cli/metrics-collector.js"

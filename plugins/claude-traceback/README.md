@@ -29,16 +29,24 @@ Claude Code auto-discovers the skill on plugin enable. MCP warm-start hooks and 
 
 Install this plugin using your Claude marketplace flow for this package source.
 
-After install, run these commands once per machine and once per repo:
+After install, run **once per machine** (recommended):
 
 ```sh
-# Global git indexing across all repos
-npx -y traceback-install-global-hook
-
-# Per-repo MCP merge, Claude hooks, and skill path sync
-cd your-repo
-npx -y traceback-setup --plugin
+npx -y traceback-setup --plugin --yes-all-repos
 ```
+
+This configures portable global MCP (`~/.claude/.mcp.json`), Claude warm-start hooks, global git indexing, and skills.
+
+Optional per-repo MCP merge:
+
+```sh
+cd your-repo
+npx -y traceback-setup --plugin --repo-only
+```
+
+Per-repo setup also adds a **Traceback debugging** section to `CLAUDE.md` (creates the file if missing). Refresh with `--claude-md-only`; skip with `--skip-claude-md`.
+
+Verify: `traceback-setup --doctor`
 
 Setup shows what is collected, states that sharing defaults to **on** for plugin installs (`[Y/n]`), and how to opt out. Non-interactive runs auto-enable when `--plugin` is set. Use plain `traceback-setup` if you prefer the default-off prompt (`[y/N]`).
 
@@ -47,8 +55,8 @@ If Claude does not load bundled MCP from the plugin package, `traceback-setup --
 ## Why extra CLI steps are required
 
 - **Plugin install** bundles the host-first routing skill, MCP config, and telemetry defaults for Claude discovery.
-- **Global git hook** (`traceback-install-global-hook`) sets `core.hooksPath` so post-commit indexing runs in all repos.
-- **Per-repo setup** (`traceback-setup`) writes Claude `UserPromptSubmit` / `PreToolUse` MCP hooks in `~/.claude/settings.json`, merges `.mcp.json`, and syncs `SKILL.md` into `~/.claude/skills/traceback/SKILL.md` idempotently.
+- **Global setup** (`traceback-setup --yes-all-repos`) sets portable MCP, Claude hooks in `~/.claude/settings.json`, `core.hooksPath`, and git excludes in one step.
+- **Per-repo setup** (`traceback-setup --repo-only`) is optional when you need project-level `.mcp.json` merges.
 
 ## Host-first routing
 
