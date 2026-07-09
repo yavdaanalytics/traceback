@@ -104,6 +104,8 @@ export interface HookStdin {
   tool_input?: { file_path?: string; [key: string]: unknown };
   file_path?: string;
   tool_info?: { user_prompt?: string };
+  cwd?: string;
+  workspace_roots?: string[];
 }
 
 export function extractQueryFromStdin(format: WarmStartFormat, stdin: HookStdin, cliQuery?: string): string {
