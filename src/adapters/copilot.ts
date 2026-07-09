@@ -118,7 +118,7 @@ function scanVscdbFallback(storageRoot: string, since?: number): typeof scanChat
       const row = db.prepare(`SELECT value FROM ItemTable WHERE key = $key`).get({ key }) as
         | { value: string | Buffer }
         | undefined;
-      if (!row) continue;
+      if (!row || row.value == null) continue;
       const raw = typeof row.value === "string" ? row.value : row.value.toString("utf-8");
       const parsed = parseChatSessionJson(raw, `vscdb-${key}`, "global", globalDb);
       if (parsed && (!since || parsed.lastModified >= since)) {

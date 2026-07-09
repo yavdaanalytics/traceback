@@ -1,0 +1,32 @@
+---
+description: Strict testing contract — real adapters in integration/e2e, adversarial fixtures
+alwaysApply: true
+---
+
+# Testing contract
+
+## Forbidden patterns
+
+- Hook/ingest tests that only assert `resolves.toBeUndefined()` without checking DB outcomes
+- Mocking `src/adapters/registry.js` in `tests/integration/` or `tests/e2e/`
+- Disabling all real adapters in e2e unless testing a single adapter in isolation (then pass `adapterId` explicitly)
+- vscdb/sqlite reader fixtures with only happy-path blobs (valid JSON only)
+- `toBeGreaterThanOrEqual(0)` as the only assertion on ingest counts
+
+## Required when changing `src/`
+
+| Area | Minimum tests |
+|------|----------------|
+| `src/adapters/**` | unit adversarial fixtures + integration ingest with real adapter |
+| `src/ingest/**` | integration: `ingested > 0`, sqlite row exists |
+| `src/git/hook-runtime.ts` | e2e: post-commit → sessions populated → link created |
+| `src/mcp/**` (new tool) | contract schema + e2e stdio round-trip |
+| `src/cli/*hook*` | integration: no TypeError lines in `.git/traceback-hook.log` on success path |
+
+## Adversarial fixtures (mandatory for DB readers)
+
+Every `SELECT value FROM ...` reader must have tests for: **NULL value**, malformed JSON, and one good row alongside one bad row (bad must not abort the scan).
+
+## E2E definition in this repo
+
+E2E = real git repo + real sqlite + real lancedb + real adapter fixtures (env-isolated via `TRACEBACK_*_STORAGE`). May mock `embedder` when not testing embedding itself.

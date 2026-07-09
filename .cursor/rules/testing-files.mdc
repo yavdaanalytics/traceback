@@ -1,0 +1,14 @@
+---
+description: Test file layout and conventions
+globs: tests/**/*
+alwaysApply: false
+---
+
+# Test file conventions
+
+- `tests/unit/` — single module; mocks OK
+- `tests/integration/` — real storage + real adapters via fixture dirs; no `registry` vi.mock
+- `tests/e2e/` — full pipeline (hook → ingest → recall/MCP); assert DB state, not just no-throw
+- `tests/regression/` — pin bugs by name (e.g. `cursor-vscdb-null-value.test.ts`)
+- Shared fixtures: `tests/fixtures/` + `tests/helpers/`
+- Isolate IDE storage in every hook/adapter test: set `TRACEBACK_CURSOR_STORAGE`, `TRACEBACK_COPILOT_STORAGE`, `TRACEBACK_CLAUDE_PROJECTS_DIR` to temp dirs
