@@ -33,8 +33,8 @@ import {
 import { getRelevantPatternsForQuery, suggestPatternsFromInvocations } from "./pattern-suggest.js";
 import { getTracebackStatus } from "./status.js";
 import { registerRepo } from "../dashboard/registry.js";
-import { maybeUploadDue } from "../telemetry/auto-upload.js";
 import { ensureTelemetryOptInFromEnv } from "../telemetry/config.js";
+import { scheduleAutoUploadDue } from "./startup.js";
 
 const config = resolveConfig();
 
@@ -699,11 +699,7 @@ async function main(): Promise<void> {
   availableAdapters();
   ensureTelemetryOptInFromEnv();
   registerRepo(config.repoPath);
-  void maybeUploadDue({ sqlitePath: config.sqlitePath, repoPath: config.repoPath }).then((result) => {
-    if (!result.ok && result.error) {
-      console.error(`traceback-telemetry: auto-upload failed: ${result.error}`);
-    }
-  });
+  scheduleAutoUploadDue({ sqlitePath: config.sqlitePath, repoPath: config.repoPath });
   const transport = new StdioServerTransport();
   await server.connect(transport);
 }
