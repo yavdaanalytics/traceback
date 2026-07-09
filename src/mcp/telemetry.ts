@@ -137,7 +137,7 @@ function buildToolMetrics(toolName: string, calls: ToolInvocationRow[]): ToolEff
     avg_baseline_tokens_est: avgBaselineTokens,
     token_reduction_pct:
       avgBaselineTokens != null && avgBaselineTokens > 0 && avgResponseTokens != null
-        ? (100 * avgResponseTokens) / avgBaselineTokens
+        ? (100 * Math.max(0, avgBaselineTokens - avgResponseTokens)) / avgBaselineTokens
         : null,
     layer4_skipped_count: layer4SkippedCount,
     trigger_decision_counts: triggerDecisionCounts,

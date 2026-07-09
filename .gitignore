@@ -41,3 +41,13 @@ deploy/traefik/
 # Machine-specific IDE MCP configs
 .mcp.json
 .vscode/mcp.json
+
+# Local deploy artifacts
+traceback-deploy*.tar
+
+# Private droplet/Traefik ops scripts (local ops only; public guide: deploy/README.md)
+scripts/check-traefik-traceback.sh
+scripts/droplet-option-a-deploy.sh
+scripts/install-traceback-file-route.sh
+scripts/revert-traefik-traceback.sh
+scripts/verify-droplet-routing.sh

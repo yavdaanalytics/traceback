@@ -238,4 +238,25 @@ describe("buildEfficiencyMetrics", () => {
     expect(tool.line_reduction_pct).toBe(90);
     expect(tool.trigger_decision_counts.strong).toBe(2);
   });
+
+  it("computes token_reduction_pct as reduced percentage, not remaining percentage", async () => {
+    const handler = withTelemetry(
+      dbPath,
+      "token_metrics_tool",
+      async () => ({ content: [{ type: "text", text: "ok" }] }),
+      () => ({
+        responseTokensEst: 100,
+        baselineTokensEst: 400,
+      }),
+    );
+    await handler({});
+
+    const report = buildEfficiencyMetrics(dbPath, { toolName: "token_metrics_tool" });
+    expect(report.total_invocations).toBe(1);
+    const tool = report.tools[0];
+    expect(tool.avg_response_tokens_est).toBe(100);
+    expect(tool.avg_baseline_tokens_est).toBe(400);
+    // 400 baseline vs 100 response => 75% reduction.
+    expect(tool.token_reduction_pct).toBe(75);
+  });
 });
