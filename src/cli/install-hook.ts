@@ -1,44 +1,59 @@
 #!/usr/bin/env node
-import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { dirname, isAbsolute, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { execFileSync } from "node:child_process";
 import { homedir } from "node:os";
+import { resolveCommandMode } from "./command-paths.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-// This file lives at dist/cli/install-hook.js at runtime; dist/ is the
-// package root for git-invoked calls (node dist/cli/hook-entry.js).
 const distDir = dirname(__dirname);
 
-export function installGlobalHook(): void {
+export function renderPostCommitScript(packageDistDir: string = distDir, chainFrom?: string): string {
+  const mode = resolveCommandMode(packageDistDir);
+  const tracebackBody =
+    mode === "dev"
+      ? `node "${join(packageDistDir, "cli", "hook-entry.js").replace(/\\/g, "/")}" "$REPO_ROOT"`
+      : `traceback-hook-entry "$REPO_ROOT"`;
+
+  const chainBlock =
+    chainFrom && existsSync(join(chainFrom, "post-commit"))
+      ? `if [ -f "${join(chainFrom, "post-commit").replace(/\\/g, "/")}" ]; then\n  sh "${join(chainFrom, "post-commit").replace(/\\/g, "/")}" "$@" || true\nfi\n`
+      : "";
+
+  return `#!/bin/sh
+# traceback post-commit hook
+REPO_ROOT="$(git rev-parse --show-toplevel)"
+${chainBlock}${tracebackBody} >/dev/null 2>&1 || true
+`;
+}
+
+export function installGlobalHook(opts?: { chainFrom?: string; packageDistDir?: string }): void {
+  const packageDistDir = opts?.packageDistDir ?? distDir;
   const globalHooksDir = resolve(homedir(), ".traceback", "hooks");
   const hookPath = join(globalHooksDir, "post-commit");
 
-  const templatePath = join(distDir, "..", "scripts", "post-commit.sh");
-  const template = readFileSync(templatePath, "utf-8").replace(
-    "__TRACEBACK_DIST_DIR__",
-    distDir.replace(/\\/g, "/"),
-  );
+  if (!existsSync(globalHooksDir)) {
+    mkdirSync(globalHooksDir, { recursive: true });
+  }
 
-  writeFileSync(hookPath, template, { mode: 0o755 });
+  const script = renderPostCommitScript(packageDistDir, opts?.chainFrom);
+  writeFileSync(hookPath, script, { mode: 0o755 });
   chmodSync(hookPath, 0o755);
 
-  console.log(`traceback: installed global post-commit hook at ${hookPath}`);
+  if (opts?.chainFrom) {
+    console.log(`traceback: installed chained global post-commit hook at ${hookPath} (chains ${opts.chainFrom})`);
+  } else {
+    console.log(`traceback: installed global post-commit hook at ${hookPath}`);
+  }
 }
 
-export function installHook(targetRepoPath: string): void {
+export function installHook(targetRepoPath: string, packageDistDir: string = distDir): void {
   const repoRoot = execFileSync("git", ["rev-parse", "--show-toplevel"], {
     cwd: targetRepoPath,
     encoding: "utf-8",
   }).trim();
 
-  // `git rev-parse --git-path hooks` resolves the *effective* hooks
-  // directory, honoring a repo-local or global `core.hooksPath` override.
-  // Hardcoding `.git/hooks` is wrong whenever that's set (common on
-  // machines with their own commit-safety tooling, not just this one) -
-  // the hook would be written somewhere git never looks. The result can be
-  // either absolute (a hooksPath override) or relative to repoRoot (the
-  // default `.git/hooks`).
   const gitPathHooks = execFileSync("git", ["rev-parse", "--git-path", "hooks"], {
     cwd: repoRoot,
     encoding: "utf-8",
@@ -50,14 +65,9 @@ export function installHook(targetRepoPath: string): void {
     mkdirSync(hooksDir, { recursive: true });
   }
 
-  const templatePath = join(distDir, "..", "scripts", "post-commit.sh");
-  const template = readFileSync(templatePath, "utf-8").replace(
-    "__TRACEBACK_DIST_DIR__",
-    distDir.replace(/\\/g, "/"),
-  );
-
   const hookPath = join(hooksDir, "post-commit");
-  writeFileSync(hookPath, template, { mode: 0o755 });
+  const script = renderPostCommitScript(packageDistDir);
+  writeFileSync(hookPath, script, { mode: 0o755 });
   chmodSync(hookPath, 0o755);
 
   console.log(`traceback: installed post-commit hook at ${hookPath}`);
@@ -72,8 +82,6 @@ export function installHook(targetRepoPath: string): void {
   }
 }
 
-// Guarded so setup.ts can import installHook() directly without re-running it
-// as a side effect of the import.
 const scriptPath = fileURLToPath(import.meta.url);
 if (process.argv[1] === scriptPath || process.argv[1].replace(/\\/g, "/") === scriptPath.replace(/\\/g, "/")) {
   const targetRepoPath = process.argv[2] ?? process.cwd();

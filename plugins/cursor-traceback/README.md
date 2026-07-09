@@ -28,24 +28,32 @@ Full policy: [`docs/TELEMETRY.md`](../../docs/TELEMETRY.md).
 
 Install this plugin from your intended Cursor marketplace/private distribution flow.
 
-After install, run these commands once per machine and once per repo:
+After install, run **once per machine** (recommended):
 
 ```sh
-# Global git indexing across all repos
-npx -y traceback-install-global-hook
-
-# Per-repo hooks, MCP merge, and skill path sync
-cd your-repo
-npx -y traceback-setup --plugin
+npx -y traceback-setup --plugin --yes-all-repos
 ```
+
+This configures portable global MCP (`~/.cursor/mcp.json`), global Cursor hooks, global git indexing, and skills — no per-repo steps required.
+
+Optional per-repo merge when project-level MCP files already exist:
+
+```sh
+cd your-repo
+npx -y traceback-setup --plugin --repo-only
+```
+
+Per-repo setup also adds a **Traceback debugging** section to `CLAUDE.md` (creates the file if missing). Refresh with `--claude-md-only`; skip with `--skip-claude-md`.
+
+Verify: `traceback-setup --doctor`
 
 Setup shows what is collected, states that sharing defaults to **on** for plugin installs (`[Y/n]`), and how to opt out. Non-interactive runs auto-enable when `--plugin` is set. Use plain `traceback-setup` if you prefer the default-off prompt (`[y/N]`).
 
 ## Why extra CLI steps are required
 
 - **Plugin install** bundles skill metadata, rules, and MCP config for Cursor discovery.
-- **Global git hook** (`traceback-install-global-hook`) sets `core.hooksPath` so post-commit indexing runs in all repos.
-- **Per-repo setup** (`traceback-setup`) writes repo-specific warm-start hooks (`.cursor/hooks.json`), merges MCP config, and syncs `SKILL.md` into host skill directories idempotently.
+- **Global setup** (`traceback-setup --yes-all-repos`) sets portable MCP, global hooks, `core.hooksPath`, and git excludes in one step.
+- **Per-repo setup** (`traceback-setup --repo-only`) is optional when you need project-level MCP merges or repo-local warm-start rules.
 
 ## Host-first routing
 

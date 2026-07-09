@@ -13,15 +13,47 @@ Details: [`docs/TELEMETRY.md`](docs/TELEMETRY.md). Plain `traceback-setup` promp
 
 ## 1. Initial Setup
 
+**Recommended — one global install for all repositories:**
+
+```sh
+npm install -g traceback   # optional
+traceback-setup            # or: npx traceback-setup
+```
+
+When prompted `Enable traceback for ALL repositories on this machine? [Y/n]`, accept the default **Yes** to configure:
+
+- **Portable global MCP** — `npx -y traceback` in `~/.cursor/mcp.json` and `~/.claude/.mcp.json` (create-if-missing)
+- **Global git hooks** — `~/.traceback/hooks` via `core.hooksPath` (post-commit indexing on every repo)
+- **Global Cursor hooks** — `~/.cursor/hooks.json` (repo resolved from `workspace_roots` / `cwd`)
+- **Claude Code hooks** — `~/.claude/settings.json` warm-start MCP hooks
+- **Global git excludes** — `core.excludesFile` patterns for `/data/traceback.db`, `/data/lancedb/`, `/.traceback/` (no `.gitignore` pollution)
+- **Skills** — `SKILL.md` synced to `~/.cursor/skills/traceback` and `~/.claude/skills/traceback`
+
+Non-interactive: `TRACEBACK_SETUP_ALL_REPOS=true traceback-setup` or `--yes-all-repos` / `--no-all-repos`.
+
+Verify: `traceback-setup --doctor`
+
+**Per-repo only** (when you declined global setup or need project-level host files):
+
 ```sh
 cd your-repo
-npx traceback-setup
+npx traceback-setup --repo-only
 ```
 
 This installs:
-- **Git post-commit hook** — automatically catalogs sessions at each commit
-- **MCP server registration** — wires traceback into Claude Code, VS Code, Cursor, and Windsurf (for whichever IDEs have config files present in your repo)
-- **Per-IDE warm-start hooks** — automatic context scoping where each host's hook API allows it (see below)
+- **Git post-commit hook** (skipped when global `core.hooksPath` is already set)
+- **MCP server registration** — merges into project `.mcp.json`, `.cursor/mcp.json`, `.vscode/mcp.json` when present
+- **Per-IDE warm-start hooks** — project `.cursor/hooks.json`, `.github/hooks/`, `.windsurf/` when those configs exist
+- **Local excludes** — `.git/info/exclude` by default (or `--use-gitignore` / `--exclude-mode=gitignore`)
+- **CLAUDE.md onboarding** — creates or updates a marked `## Traceback debugging` section (idempotent; skip with `--skip-claude-md`)
+
+Refresh onboarding only: `traceback-setup --claude-md-only`
+
+Verify repo onboarding: `traceback-setup --doctor` (from inside the git repo)
+
+If another tool owns `core.hooksPath` (e.g. Husky), re-run with `--chain-hooks` to chain the existing post-commit hook.
+
+Dev mode (absolute `dist/` paths): `TRACEBACK_DEV=1 traceback-setup`
 
 ### Warm-start by IDE
 
@@ -29,7 +61,7 @@ This installs:
 |-----|-------------------------|----------|
 | Claude Code | `~/.claude/settings.json` | Native MCP hooks on every prompt and before file reads |
 | VS Code / Copilot / JetBrains Copilot | `.github/hooks/traceback-warmstart.json` | Injects `search_with_fallback` context on prompt submit and before Read |
-| Cursor | `.cursor/hooks.json` + `.cursor/rules/traceback.mdc` | `beforeReadFile` injects scoped context; `preToolUse` blocks `Grep`/`Glob` until `search_with_fallback` runs; rule mandates MCP as first tool call |
+| Cursor | `~/.cursor/hooks.json` (global) or `.cursor/hooks.json` + `.cursor/rules/traceback.mdc` (per-repo) | `beforeReadFile` injects scoped context; `preToolUse` blocks `Grep`/`Glob` until `search_with_fallback` runs; rule mandates MCP as first tool call |
 | Windsurf | `.windsurf/hooks.json` + `.windsurf/mcp.json` | `pre_user_prompt` hook runs warm-start before each prompt |
 
 Manual warm-start CLI: `npx traceback-warmstart --format plain --query "your question" --repo-path .`
