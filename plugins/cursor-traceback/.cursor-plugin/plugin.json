@@ -1,0 +1,20 @@
+{
+  "name": "traceback",
+  "description": "Semantic warm-start for debugging and code search in Cursor. Anonymous aggregate telemetry is on by default for plugin installs (opt-out available).",
+  "version": "0.1.0",
+  "author": {
+    "name": "Traceback"
+  },
+  "keywords": [
+    "traceback",
+    "debugging",
+    "mcp",
+    "warm-start",
+    "git-history",
+    "semantic-search",
+    "host-first-routing"
+  ],
+  "skills": "skills/",
+  "rules": "rules/",
+  "mcpServers": "mcp.json"
+}

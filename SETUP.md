@@ -1,5 +1,16 @@
 # traceback Setup & Quick Start
 
+## Rollout status
+
+| Phase | Status | Commands |
+|-------|--------|----------|
+| **1 — Local observability** | Implemented | `traceback-dashboard`, `get_efficiency_report`, `traceback-telemetry export --local` |
+| **2 — Opt-in anonymous upload** | Implemented | `traceback-telemetry enable`, `preview`, `upload` |
+| **3 — Public transparency** | Implemented | `traceback-metrics` (self-hosted collector) |
+| **4 — Enterprise mode** | Roadmap | Signed reports, org controls, compliance retention (not in OSS scope) |
+
+Details: [`docs/TELEMETRY.md`](docs/TELEMETRY.md). Plain `traceback-setup` prompts at the end (default **OFF**, `[y/N]`). Plugin installs use `traceback-setup --plugin` (default **ON**, `[Y/n]`) with install-time disclosure.
+
 ## 1. Initial Setup
 
 ```sh
@@ -33,6 +44,23 @@ use a **balanced host-first** gate:
 - clear non-code prompt -> skip traceback
 
 Reference metadata schema: [`SKILL.md`](SKILL.md).
+
+### Plugin install path
+
+The Cursor and Claude plugin packages under `plugins/` bundle the same host-first skill and MCP telemetry defaults:
+
+- `plugins/cursor-traceback/` — skill, rules, `mcp.json`
+- `plugins/claude-traceback/` — skill, `mcp.json`
+
+After enabling the plugin in your IDE, run **per repo**:
+
+```sh
+npx traceback-setup --plugin
+```
+
+Setup prints what is collected, states that sharing defaults **on** for plugin installs, and how to opt out (`n` at the prompt, or `traceback-telemetry disable` later). Non-interactive `--plugin` runs auto-enable sharing.
+
+Use plain `npx traceback-setup` if you prefer default-off sharing (`[y/N]`).
 
 ## 2. Using traceback in Your IDE
 
@@ -106,6 +134,28 @@ The dashboard shows:
 - **Warm-start effectiveness** (scoped lines vs. unscoped baseline)
 
 Data updates live from `data/traceback.db` every 5 seconds.
+
+### Telemetry CLI (Phases 1–2)
+
+```sh
+traceback-telemetry status
+traceback-telemetry export --local
+traceback-telemetry enable
+traceback-telemetry preview
+traceback-telemetry upload
+```
+
+Set `TRACEBACK_TELEMETRY_ENDPOINT` to your collector URL before uploading.
+
+### Public metrics collector (Phase 3)
+
+```sh
+traceback-metrics
+```
+
+Serves `POST /v1/rollups`, `GET /api/public/stats`, and a public HTML page at `/`.
+
+Production: **`https://traceback.yavda.com`**. Self-host guide: [`deploy/README.md`](deploy/README.md).
 
 ## 4. Verify Installation
 
@@ -197,5 +247,11 @@ Covers:
 **Git hook not triggering?**
 - Verify `~/.traceback/hooks/post-commit` exists (or check `git config --global core.hooksPath`).
 - Try a manual commit: `git commit --allow-empty -m "test hook"`.
+
+**Want to opt out of anonymous telemetry?**
+- During setup: answer `n` at the sharing prompt.
+- Anytime: `traceback-telemetry disable`
+- Keep opt-in but stop daily uploads: `traceback-telemetry auto-upload off`
+- Check status: `traceback-telemetry status`
 
 See `CLAUDE.md` for developer details on testing, security invariants, and architecture.
