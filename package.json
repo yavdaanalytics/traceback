@@ -2,6 +2,7 @@
   "name": "traceback",
   "version": "0.1.0",
   "description": "Semantic debugger MCP server: warm-starts grep/git with cosine-similarity recall over past coding-agent sessions",
+  "license": "MIT",
   "type": "module",
   "bin": {
     "traceback": "dist/mcp/index.js",
@@ -9,11 +10,15 @@
     "traceback-install-global-hook": "dist/cli/install-global-hook.js",
     "traceback-setup": "dist/cli/setup.js",
     "traceback-warmstart": "dist/cli/warm-start.js",
-    "traceback-dashboard": "dist/cli/dashboard.js"
+    "traceback-dashboard": "dist/cli/dashboard.js",
+    "traceback-telemetry": "dist/cli/telemetry.js",
+    "traceback-metrics": "dist/cli/metrics-collector.js"
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "start": "node dist/mcp/index.js",
+    "release:sync-plugins": "node scripts/sync-plugin-versions.mjs",
+    "release:verify-tag": "node scripts/verify-release-tag.mjs",
     "test": "vitest run",
     "test:unit": "vitest run tests/unit",
     "test:integration": "vitest run tests/integration",

@@ -41,4 +41,4 @@ Other checks:
 - No DAST — `traceback` is a local stdio MCP server with no network listener, so HTTP-facing DAST tooling (ZAP, etc.) doesn't apply.
 
 ## Out of scope / deliberately unwired
-- The "Episode" model mentioned in `ROADMAP.md` is deferred, not v1.
+- The "Episode" hierarchical session model is deferred, not v1.
