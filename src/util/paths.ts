@@ -3,5 +3,10 @@
 // forward slashes; repo paths passed around the process may use OS-native
 // separators, and Windows paths are case-insensitive).
 export function normalizePath(p: string): string {
-  return p.replace(/\\/g, "/").toLowerCase();
+  let norm = p.replace(/\\/g, "/").toLowerCase();
+  // Cursor/VS Code workspace.json uses file:///c:/... which decodes to /c:/...
+  if (/^\/[a-z]:\//.test(norm)) {
+    norm = norm.slice(1);
+  }
+  return norm;
 }

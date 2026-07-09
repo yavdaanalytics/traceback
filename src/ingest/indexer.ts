@@ -30,7 +30,12 @@ export async function ingestStaleSessions(
   let skipped = 0;
 
   for (const adapter of adapters) {
-    const refs = adapter.discover?.() ?? adapter.listSessions();
+    let refs: SessionRef[];
+    try {
+      refs = adapter.discover?.() ?? adapter.listSessions();
+    } catch {
+      continue;
+    }
     for (const ref of refs) {
       if (opts.projectPath && normalizePath(ref.projectPath) !== normalizePath(opts.projectPath)) continue;
       if (opts.sessionId && ref.sessionId !== opts.sessionId && !ref.sessionId.startsWith(`${opts.sessionId}:`)) continue;
@@ -56,8 +61,12 @@ export async function ingestStaleSessions(
         // non-blocking
       }
 
-      await ingestOneRef(config, adapter, ref);
-      ingested++;
+      try {
+        await ingestOneRef(config, adapter, ref);
+        ingested++;
+      } catch {
+        // non-blocking per session
+      }
     }
   }
 
