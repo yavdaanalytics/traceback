@@ -5,6 +5,7 @@ import { defaultDataDir, defaultSqlitePath, ingestStaleSessions } from "../inges
 import { normalizePath } from "../util/paths.js";
 import { getHeadSha } from "./commit-window.js";
 import { linkSessionToCommit } from "./linkage.js";
+import { ensureRepoInfoExclude } from "../cli/git-excludes.js";
 
 const ACTIVE_WINDOW_MS = 15 * 60 * 1000;
 
@@ -26,6 +27,7 @@ function logFailure(repoPath: string, error: unknown): void {
 // several equally-recent sessions are ambiguous.
 export async function runPostCommitHook(repoPath: string): Promise<void> {
   try {
+    ensureRepoInfoExclude(repoPath);
     const config = { dataDir: defaultDataDir(repoPath), sqlitePath: defaultSqlitePath(repoPath) };
     const normalizedRepoPath = normalizePath(repoPath);
     await ingestStaleSessions(config, { projectPath: normalizedRepoPath });

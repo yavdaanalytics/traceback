@@ -14,14 +14,15 @@ import {
   type WarmStartFormat,
 } from "./warm-start-format.js";
 import { runCursorMcpMark, runCursorWarmGate } from "./warm-start-cursor.js";
+import { resolveRepoFromHookStdin } from "./repo-resolve.js";
 
 function parseArgs(argv: string[]): {
   format: WarmStartFormat;
-  repoPath: string;
+  repoPath?: string;
   query?: string;
 } {
   let format: WarmStartFormat = "plain";
-  let repoPath = process.cwd();
+  let repoPath: string | undefined;
   let query: string | undefined;
 
   for (let i = 2; i < argv.length; i++) {
@@ -104,8 +105,9 @@ export async function runWarmStart(opts: {
 }
 
 async function main(): Promise<void> {
-  const { format, repoPath, query } = parseArgs(process.argv);
+  const { format, repoPath: cliRepoPath, query } = parseArgs(process.argv);
   const stdin = await readStdinJson();
+  const repoPath = cliRepoPath ?? resolveRepoFromHookStdin(stdin, process.cwd()) ?? process.cwd();
   try {
     const out = await runWarmStart({ format, repoPath, query, stdin });
     process.stdout.write(out);
