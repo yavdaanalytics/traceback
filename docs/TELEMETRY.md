@@ -2,6 +2,8 @@
 
 Open, privacy-first telemetry for proving warm-start effectiveness across users.
 
+> Full telemetry spec lives here — README only states opt-in defaults. Doc policy: [`DOCUMENTATION.md`](DOCUMENTATION.md).
+
 ## Rollout phases
 
 | Phase | Status | What it does |

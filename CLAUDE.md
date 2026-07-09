@@ -4,6 +4,21 @@ Semantic debugger MCP server: warm-starts grep/git with cosine-similarity recall
 over past coding-agent sessions, so an LLM agent scopes searches instead of
 grepping the whole repo blind.
 
+## Documentation layering (required)
+
+Follow [`docs/DOCUMENTATION.md`](docs/DOCUMENTATION.md) whenever you add or edit user-facing text.
+
+| Tier | Files | Your job |
+|------|-------|----------|
+| Front door | `README.md` | Value prop, quick start, funnel one-liner, privacy defaults, doc map only — no API tables or hook details |
+| Task guides | `SETUP.md`, `docs/API.md`, `docs/ARCHITECTURE.md`, `docs/TELEMETRY.md`, `SKILL.md` | Put install steps, tool reference, architecture depth, telemetry schema here |
+| Contributor | `CLAUDE.md`, `docs/DEV.md` | Stack, tests, security, bench SLAs |
+
+When you add an MCP tool: wire `src/mcp/index.ts`, update `tests/contract/`, and **`docs/API.md`** (not README).
+When you change install/hooks: **`SETUP.md`** (not README).
+`ROADMAP*.md` is gitignored — keep internal planning local; never link from public docs.
+Open source does not hide implementation — layer docs for clarity, not secrecy.
+
 ## Stack (as it actually exists in this repo — do not add to this without checking package.json first)
 - **Runtime**: Node >=22.5.0, TypeScript, ESM (`"type": "module"`), compiled via `tsc` (`npm run build`).
 - **MCP transport**: `@modelcontextprotocol/sdk` (`McpServer` + `StdioServerTransport`), tools registered via `server.registerTool(name, {description, inputSchema: zod}, handler)`.
@@ -35,7 +50,7 @@ Test runner: **Vitest** (`npm test` runs everything under `tests/`). Layout:
 **Important — `node:sqlite`/LanceDB singleton caveat**: `getConnection()` in `lancedb.ts` still caches its handle keyed on the *first* dir passed to it per process; a second call with a different dir in the same process silently reuses the first connection. `getDb()` in `sqlite.ts` no longer has this limitation — it caches per resolved path in a `Map`, so multiple SQLite paths can be open at once in one process (this is what lets the dashboard aggregate across repos). LanceDB test files must still use exactly one dir for their own duration — this works today because Vitest's default pool runs each test file in an isolated worker/module registry. Don't multiplex LanceDB dirs within a single test file.
 
 Other checks:
-- `npm run bench` (`scripts/bench.mjs`, run after `npm run build`) — latency/throughput of `sqlite` writes/reads and LanceDB search at 1k/5k/10k-row scale. Not classic load testing (this is a single-user local stdio process, not a concurrent network service) — it answers "does this stay fast as history grows."
+- `npm run bench` (`scripts/bench.mjs`, run after `npm run build`) — latency/throughput of `sqlite` writes/reads and LanceDB search at 1k/5k/10k-row scale. SLA thresholds and security gate summary: [`docs/DEV.md`](docs/DEV.md). Not classic load testing (this is a single-user local stdio process, not a concurrent network service) — it answers "does this stay fast as history grows."
 - `npm run security:sast` — runs [Semgrep](https://semgrep.dev) (`--config auto --config p/command-injection`) against `src/`. Semgrep itself is a **system-level `pip install semgrep`**, not an npm devDependency — install it once per machine, it's not vendored in `node_modules`.
 - `npm run security:audit` — `npm audit` for dependency vulnerabilities. Known finding: `fastembed`'s pinned `tar` transitive dependency has published advisories; the only fix available is downgrading `fastembed` to `1.0.0` (breaking) — left as-is pending a real fastembed upgrade, not silently force-fixed.
 - No DAST — `traceback` is a local stdio MCP server with no network listener, so HTTP-facing DAST tooling (ZAP, etc.) doesn't apply.

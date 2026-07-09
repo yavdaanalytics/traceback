@@ -9,40 +9,39 @@ These snapshots demonstrate traceback's value with **real queries on real repos*
 - **The query** that triggered the search
 - **Traceback's results** (scoped, warm-started)
 - **Blind grep baseline** (what you'd get without traceback)
-- **Token/context comparison** (savings in dollars, context budget, latency)
+- **Token/context comparison** (savings in context budget, latency)
 - **Repo metadata** (size, complexity, domain)
 
 ## Files
 
 ### `powerbi-embedded-analytics-ciam-search.md`
-- **Repo:** Multi-tenant SaaS with Azure CIAM auth, Power BI embedding
+
+- **Repo:** Private multi-tenant SaaS with Azure CIAM auth, Power BI embedding (~100K LOC)
 - **Query:** "CIAM authentication tenant isolation"
-- **Finding:** 10,542 blind grep matches → 107 scoped results (99% noise reduction, 300K token savings)
-- **Significance:** Cold-start L2/L3 funnel outperforms blind grep by 98.9% on token efficiency
+- **Finding:** 10,542 blind grep matches → 107 scoped results (99% noise reduction, ~300K token savings)
+- **Fixture:** [`fixtures/powerbi-ciam-proof/invocation-1.json`](../fixtures/powerbi-ciam-proof/invocation-1.json) (redacted telemetry)
+- **Re-run:** `npm run build && npm run proof:powerbi` (local checkout required; repo is not public)
 
 ## How to Generate Your Own
 
-Run traceback on your repo with any real query:
+On any repo where traceback is set up:
 
 ```bash
 cd your-repo
-node C:/source/traceback/dist/mcp/index.js
-# Call: search_with_fallback({ query: "your domain question here" })
+npm run build   # in traceback checkout
+npm run proof:powerbi -- --repo /path/to/your-repo
 ```
 
-Then compare to blind grep:
+Or call `search_with_fallback` via MCP and compare to blind grep:
 
 ```bash
-git grep -i "your search terms" | wc -l
-git grep -i "your search terms" | head -100 | wc -c  # byte count
+git grep -i -E "your|terms" | wc -l
 ```
 
-Divide bytes by 4 to estimate tokens, then document the comparison here.
+Document the comparison in a new markdown file under this directory.
 
 ## Why This Matters
 
-- **Context is expensive**: A single 300K-token grep result eats 30% of your working window.
-- **Traceback saves ~99% of that** on real codebases (not theory, measured).
+- **Context is expensive**: A single 300K-token grep result eats a large share of your working window.
+- **Traceback saves ~99% of that** on real codebases (measured, not theoretical).
 - **Agent reasoning improves** when it can afford to read all results instead of guessing.
-- **Development velocity** compounds: saving context on search → room for more follow-ups → fewer re-runs.
-
