@@ -100,9 +100,5 @@ Expected value:
 
 ## Notes for maintainers
 
-- Keep plugin assets aligned with:
-  - `SKILL.md` (repo root — synced by `npm run release:sync-plugins`)
-  - `src/cli/setup.ts` (`renderTracebackCursorRule`, `installTracebackSkills`)
-  - `src/cli/install-global-hook.ts`
-  - `src/cli/install-hook.ts`
-- Run `npm run release:sync-plugins` before release to sync versions + `SKILL.md` into both plugin packages.
+- Keep plugin assets aligned with `src/cli/setup.ts` portable helpers (`renderTracebackCursorRule`, `portableCursorHooksConfig`, `portablePluginMcpConfig`, …).
+- Run `npm run build && npm run release:sync-plugins` before release to sync versions, skill, rule, hooks, and mcp into both plugin packages.

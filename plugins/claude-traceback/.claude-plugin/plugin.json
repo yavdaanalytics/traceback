@@ -16,5 +16,6 @@
     "host-first-routing"
   ],
   "skills": "skills/",
+  "hooks": "hooks/hooks.json",
   "mcpServers": "mcp.json"
 }

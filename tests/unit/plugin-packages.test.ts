@@ -1,6 +1,13 @@
 import { describe, it, expect } from "vitest";
 import { existsSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
+import {
+  renderTracebackCursorRule,
+  portableCursorHooksConfig,
+  portableClaudeHooksConfig,
+  portablePluginMcpConfig,
+  TRACEBACK_CONFIG_KEY,
+} from "../../src/cli/setup.js";
 
 const repoRoot = resolve(import.meta.dirname, "../..");
 const rootSkillPath = join(repoRoot, "SKILL.md");
@@ -16,10 +23,12 @@ const pluginPackages = [
     manifestPath: join(repoRoot, "plugins", "cursor-traceback", ".cursor-plugin", "plugin.json"),
     skillPath: join(repoRoot, "plugins", "cursor-traceback", "skills", "traceback", "SKILL.md"),
     mcpPath: join(repoRoot, "plugins", "cursor-traceback", "mcp.json"),
-    expectedManifestFields: ["skills", "rules", "mcpServers"] as const,
+    hooksPath: join(repoRoot, "plugins", "cursor-traceback", "hooks", "hooks.json"),
+    expectedManifestFields: ["skills", "rules", "hooks", "mcpServers"] as const,
     extraPaths: [
       join(repoRoot, "plugins", "cursor-traceback", "rules", "traceback.mdc"),
       join(repoRoot, "plugins", "cursor-traceback", "mcp.json"),
+      join(repoRoot, "plugins", "cursor-traceback", "hooks", "hooks.json"),
     ],
   },
   {
@@ -27,8 +36,12 @@ const pluginPackages = [
     manifestPath: join(repoRoot, "plugins", "claude-traceback", ".claude-plugin", "plugin.json"),
     skillPath: join(repoRoot, "plugins", "claude-traceback", "skills", "traceback", "SKILL.md"),
     mcpPath: join(repoRoot, "plugins", "claude-traceback", "mcp.json"),
-    expectedManifestFields: ["skills", "mcpServers"] as const,
-    extraPaths: [join(repoRoot, "plugins", "claude-traceback", "mcp.json")],
+    hooksPath: join(repoRoot, "plugins", "claude-traceback", "hooks", "hooks.json"),
+    expectedManifestFields: ["skills", "hooks", "mcpServers"] as const,
+    extraPaths: [
+      join(repoRoot, "plugins", "claude-traceback", "mcp.json"),
+      join(repoRoot, "plugins", "claude-traceback", "hooks", "hooks.json"),
+    ],
   },
 ];
 
@@ -54,6 +67,40 @@ describe("plugin packages", () => {
       expect(pluginSkill).toContain("<!-- traceback-skill -->");
       expect(pluginSkill).toContain("name: traceback-host-first-router");
       expect(rootSkill).toContain("name: traceback-host-first-router");
+    }
+  });
+
+  it("cursor rule matches renderTracebackCursorRule from setup", () => {
+    const rulePath = join(repoRoot, "plugins", "cursor-traceback", "rules", "traceback.mdc");
+    const bundled = normalize(readFileSync(rulePath, "utf-8"));
+    const expected = normalize(renderTracebackCursorRule(TRACEBACK_CONFIG_KEY));
+    expect(bundled).toBe(expected);
+    expect(bundled).toContain("Host-first routing");
+    expect(bundled).toContain("relevant_patterns");
+  });
+
+  it("cursor hooks match portableCursorHooksConfig from setup", () => {
+    const hooksPath = join(repoRoot, "plugins", "cursor-traceback", "hooks", "hooks.json");
+    const bundled = JSON.parse(readFileSync(hooksPath, "utf-8"));
+    expect(bundled).toEqual(portableCursorHooksConfig());
+    expect(bundled.hooks.beforeReadFile[0].command).toContain("cursor-read");
+    expect(bundled.hooks.preToolUse[0].matcher).toBe("Grep|Glob");
+    expect(bundled.hooks.afterMCPExecution[0].matcher).toBe("search_with_fallback");
+  });
+
+  it("claude hooks match portableClaudeHooksConfig from setup", () => {
+    const hooksPath = join(repoRoot, "plugins", "claude-traceback", "hooks", "hooks.json");
+    const bundled = JSON.parse(readFileSync(hooksPath, "utf-8"));
+    expect(bundled).toEqual(portableClaudeHooksConfig());
+    expect(bundled.hooks.UserPromptSubmit[0].hooks[0].tool).toBe("search_with_fallback");
+    expect(bundled.hooks.PreToolUse[0].matcher).toBe("Read");
+  });
+
+  it("mcp.json matches portablePluginMcpConfig from setup", () => {
+    const expected = portablePluginMcpConfig();
+    for (const pkg of pluginPackages) {
+      const mcp = JSON.parse(readFileSync(pkg.mcpPath, "utf-8"));
+      expect(mcp).toEqual(expected);
     }
   });
 
