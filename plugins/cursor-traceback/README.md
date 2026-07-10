@@ -22,7 +22,7 @@ Full policy: [`docs/TELEMETRY.md`](../../docs/TELEMETRY.md).
 
 - **Skill** (`skills/traceback/SKILL.md`) — host-first keyword routing metadata
 - **Rule** (`rules/traceback.mdc`) — always-on warm-start contract
-- **MCP server** (`mcp.json`) — `npx -y traceback` stdio server entry
+- **MCP server** (`mcp.json`) — `npx -y @yavdaanalytics/traceback` stdio server entry
 
 ## Install in Cursor
 
@@ -31,7 +31,7 @@ Install this plugin from your intended Cursor marketplace/private distribution f
 After install, run **once per machine** (recommended):
 
 ```sh
-npx -y traceback-setup --plugin --yes-all-repos
+npx -y -p @yavdaanalytics/traceback traceback-setup --plugin --yes-all-repos
 ```
 
 This configures portable global MCP (`~/.cursor/mcp.json`), global Cursor hooks, global git indexing, and skills — no per-repo steps required.
@@ -40,7 +40,7 @@ Optional per-repo merge when project-level MCP files already exist:
 
 ```sh
 cd your-repo
-npx -y traceback-setup --plugin --repo-only
+npx -y -p @yavdaanalytics/traceback traceback-setup --plugin --repo-only
 ```
 
 Per-repo setup also adds a **Traceback debugging** section to `CLAUDE.md` (creates the file if missing). Refresh with `--claude-md-only`; skip with `--skip-claude-md`.
@@ -96,7 +96,7 @@ Expected value:
 - All install commands are idempotent and safe to re-run.
 - If MCP routing fails, call `get_connection_info` and use the returned `call_server_id` (`traceback` vs `user-traceback`).
 - Opt out of telemetry: `traceback-telemetry disable`
-- If global `core.hooksPath` conflicts with company policy, use repo-local hooks: `npx -y traceback-install-hook`.
+- If global `core.hooksPath` conflicts with company policy, use repo-local hooks: `npx -y -p @yavdaanalytics/traceback traceback-install-hook`.
 
 ## Notes for maintainers
 

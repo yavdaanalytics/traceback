@@ -1,9 +1,20 @@
 {
-  "name": "traceback",
+  "name": "@yavdaanalytics/traceback",
   "version": "0.1.0",
   "description": "Semantic debugger MCP server: warm-starts grep/git with cosine-similarity recall over past coding-agent sessions",
   "license": "MIT",
   "type": "module",
+  "publishConfig": {
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/yavdaanalytics/traceback.git"
+  },
+  "homepage": "https://github.com/yavdaanalytics/traceback",
+  "bugs": {
+    "url": "https://github.com/yavdaanalytics/traceback/issues"
+  },
   "bin": {
     "traceback": "dist/mcp/index.js",
     "traceback-install-hook": "dist/cli/install-hook.js",
@@ -19,6 +30,7 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "start": "node dist/mcp/index.js",
+    "prepublishOnly": "npm run build && npm test",
     "release:sync-plugins": "node scripts/sync-plugin-versions.mjs",
     "release:verify-tag": "node scripts/verify-release-tag.mjs",
     "test": "vitest run",
