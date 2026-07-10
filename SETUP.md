@@ -81,10 +81,12 @@ Reference metadata schema: [`SKILL.md`](SKILL.md).
 
 ### Plugin install path
 
-The Cursor and Claude plugin packages under `plugins/` bundle the same host-first skill and MCP telemetry defaults:
+The Cursor and Claude plugin packages under `plugins/` are synced from setup (`npm run release:sync-plugins` after `npm run build`) and bundle:
 
-- `plugins/cursor-traceback/` — skill, rules, `mcp.json`
-- `plugins/claude-traceback/` — skill, `mcp.json`
+- `plugins/cursor-traceback/` — skill, rules, portable warm-start `hooks/hooks.json`, `mcp.json`
+- `plugins/claude-traceback/` — skill, portable Claude MCP `hooks/hooks.json`, `mcp.json`
+
+Hooks and MCP entries match `portableCursorHooksConfig` / `portableClaudeHooksConfig` / `portablePluginMcpConfig` in `src/cli/setup.ts`. `traceback-setup --plugin` still configures global git hooks, host MCP merges, and telemetry disclosure.
 
 After enabling the plugin in your IDE, run **per repo**:
 

@@ -1,0 +1,25 @@
+{
+  "version": 1,
+  "hooks": {
+    "beforeReadFile": [
+      {
+        "command": "traceback-warmstart --format cursor-read",
+        "timeout": 90
+      }
+    ],
+    "preToolUse": [
+      {
+        "command": "traceback-warmstart --format cursor-gate",
+        "matcher": "Grep|Glob",
+        "timeout": 10
+      }
+    ],
+    "afterMCPExecution": [
+      {
+        "command": "traceback-warmstart --format cursor-mcp-mark",
+        "matcher": "search_with_fallback",
+        "timeout": 10
+      }
+    ]
+  }
+}

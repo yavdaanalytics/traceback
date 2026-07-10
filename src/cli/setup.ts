@@ -13,6 +13,8 @@ import {
   TRACEBACK_CONFIG_KEY,
   type InstallScope,
 } from "../install/registry.js";
+
+export { TRACEBACK_CONFIG_KEY };
 import { enableTelemetry, writeTelemetryConfig, readTelemetryConfig } from "../telemetry/config.js";
 import {
   DEFAULT_TELEMETRY_ENDPOINT,
@@ -243,6 +245,13 @@ For **every** user message that is not purely conversational (greetings, thanks,
 
 **MCP routing:** The mcp.json config key is \`traceback\`; Cursor global installs expose \`user-traceback\`. If a call fails with "server does not exist", call \`get_connection_info\` on whichever traceback server is listed under your MCP tools, then retry with the returned \`call_server_id\`.
 
+## Host-first routing
+
+Before invoking MCP, apply the bundled \`traceback\` skill metadata (\`routing_mode: balanced_host_first\`):
+
+- **strong** or **weak** keyword match → call \`search_with_fallback\`
+- **skip** only for clearly non-code prompts (weather, jokes, etc.)
+
 ## After warm-start
 
 1. Use returned \`session_matches\`, \`git_scope\`, and \`grep_result\` to narrow every subsequent read and search.
@@ -252,6 +261,92 @@ For **every** user message that is not purely conversational (greetings, thanks,
 
 Other useful traceback tools: \`get_connection_info\`, \`get_traceback_status\`, \`find_similar_sessions\`, \`get_session_detail\`, \`get_change_graph\`, \`blame_current\`.
 `;
+}
+
+/** Portable Cursor warm-start hooks (no hardcoded repo path; resolves from workspace). */
+export function portableCursorHooksConfig(): Record<string, unknown> {
+  return {
+    version: 1,
+    hooks: {
+      beforeReadFile: [{ command: warmStartCommandPortable("cursor-read"), timeout: 90 }],
+      preToolUse: [
+        {
+          command: warmStartCommandPortable("cursor-gate"),
+          matcher: "Grep|Glob",
+          timeout: 10,
+        },
+      ],
+      afterMCPExecution: [
+        {
+          command: warmStartCommandPortable("cursor-mcp-mark"),
+          matcher: "search_with_fallback",
+          timeout: 10,
+        },
+      ],
+    },
+  };
+}
+
+/** Portable Claude Code MCP warm-start hooks (repo from ${cwd}). */
+export function portableClaudeHooksConfig(): Record<string, unknown> {
+  return {
+    hooks: {
+      UserPromptSubmit: [
+        {
+          matcher: "*",
+          hooks: [
+            {
+              type: "mcp_tool",
+              server: "traceback",
+              tool: "search_with_fallback",
+              input: {
+                query: "${user_input}",
+                repo_path: "${cwd}",
+              },
+              statusMessage: "Warming up traceback context...",
+              async: true,
+              asyncRewake: true,
+            },
+          ],
+        },
+      ],
+      PreToolUse: [
+        {
+          matcher: "Read",
+          hooks: [
+            {
+              type: "mcp_tool",
+              server: "traceback",
+              tool: "search_with_fallback",
+              input: {
+                query: "${tool_input.file_path}",
+                repo_path: "${cwd}",
+              },
+              statusMessage: "Scoping search context...",
+              async: true,
+            },
+          ],
+        },
+      ],
+    },
+  };
+}
+
+/** Portable plugin MCP entry (npx + plugin telemetry defaults). */
+export function portablePluginMcpConfig(): Record<string, unknown> {
+  return {
+    mcpServers: {
+      traceback: {
+        ...mcpServerEntryPortable(),
+        env: {
+          TRACEBACK_MCP_SERVER_ID: TRACEBACK_CONFIG_KEY,
+          TRACEBACK_MCP_CONFIG_KEY: TRACEBACK_CONFIG_KEY,
+          TRACEBACK_TELEMETRY_OPT_IN: "true",
+          TRACEBACK_TELEMETRY_ENDPOINT: DEFAULT_TELEMETRY_ENDPOINT,
+        },
+      },
+    },
+  };
 }
 
 export function sameEntry(a: unknown, b: unknown): boolean {
