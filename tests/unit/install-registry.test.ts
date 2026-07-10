@@ -81,6 +81,7 @@ describe("install registry", () => {
       );
 
       const globalPath = join(homedir(), ".cursor", "mcp.json");
+      mkdirSync(dirname(globalPath), { recursive: true });
       let globalBackup: string | null = null;
       let hadGlobal = existsSync(globalPath);
       if (hadGlobal) globalBackup = readFileSync(globalPath, "utf-8");
