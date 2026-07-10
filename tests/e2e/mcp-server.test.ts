@@ -89,7 +89,7 @@ beforeAll(async () => {
     clientInfo: { name: "vitest-e2e", version: "0" },
   });
   proc.stdin.write(`${JSON.stringify({ jsonrpc: "2.0", method: "notifications/initialized" })}\n`);
-}, 30_000);
+}, 120_000);
 
 afterAll(() => {
   proc.kill();

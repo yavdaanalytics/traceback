@@ -41,11 +41,13 @@ export function decodeClaudeProjectDir(dirName: string): string {
     return osPathFromSegments(drive, tokens);
   }
   // Unix absolute paths encode leading `/` as a leading `-`.
+  // Only rewrite when a real filesystem path resolves; otherwise keep dirName so
+  // literal folders named like `-foo` (e.g. on Windows) round-trip unchanged.
   if (dirName.startsWith("-") && dirName.length > 1) {
     const tokens = dirName.slice(1).split("-");
     const resolved = resolveUnixAbsoluteFromTokens(tokens);
     if (resolved) return resolved;
-    return `/${tokens.join("/")}`;
+    return dirName;
   }
   return dirName;
 }
@@ -103,11 +105,13 @@ export function decodeCursorProjectDir(dirName: string): string {
     return osPathFromSegments(drive, tokens);
   }
   // Unix absolute paths encode leading `/` as a leading `-`.
+  // Only rewrite when a real filesystem path resolves; otherwise keep dirName so
+  // literal folders named like `-foo` (e.g. on Windows) round-trip unchanged.
   if (dirName.startsWith("-") && dirName.length > 1) {
     const tokens = dirName.slice(1).split("-");
     const resolved = resolveUnixAbsoluteFromTokens(tokens);
     if (resolved) return resolved;
-    return `/${tokens.join("/")}`;
+    return dirName;
   }
   return dirName;
 }

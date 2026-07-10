@@ -34,6 +34,12 @@ describe("encodeClaudeProjectDir / decodeClaudeProjectDir", () => {
     const encoded = encodeClaudeProjectDir(projectPath);
     expect(normalizePath(decodeClaudeProjectDir(encoded))).toBe(normalizePath(projectPath));
   });
+
+  it("keeps literal leading-dash names when no Unix path exists", () => {
+    // Invented `/weird/name` would break round-tripping for a real folder named `-weird-name`.
+    expect(decodeClaudeProjectDir("-weird-name")).toBe("-weird-name");
+    expect(decodeClaudeProjectDir("-")).toBe("-");
+  });
 });
 
 describe("encodeCursorProjectDir / decodeCursorProjectDir", () => {
@@ -67,6 +73,10 @@ describe("encodeCursorProjectDir / decodeCursorProjectDir", () => {
   it("returns dirName unchanged when pattern does not match", () => {
     expect(decodeCursorProjectDir("empty-window")).toBe("empty-window");
     expect(decodeCursorProjectDir("1772373489507")).toBe("1772373489507");
+  });
+
+  it("keeps literal leading-dash names when no Unix path exists", () => {
+    expect(decodeCursorProjectDir("-weird-name")).toBe("-weird-name");
   });
 });
 
