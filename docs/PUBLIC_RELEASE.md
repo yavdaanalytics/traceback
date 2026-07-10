@@ -16,7 +16,7 @@ Manual steps before publishing this repository publicly under MIT license.
 ## Publishing
 
 - [ ] **GitHub** — Create or open public repo: https://github.com/yavdaanalytics/traceback
-- [ ] **npm** — Add `NPM_TOKEN` to GitHub Actions secrets; tag `v*` to trigger [`.github/workflows/release-tag.yml`](../.github/workflows/release-tag.yml)
+- [ ] **npm** — Package is `@yavdaanalytics/traceback` (unscoped `traceback` is taken). Ensure `NPM_TOKEN` can publish to the `yavdaanalytics` org; tag `v*` to trigger [`.github/workflows/release-tag.yml`](../.github/workflows/release-tag.yml). `prepublishOnly` runs `build` + `test` before every `npm publish`.
 - [ ] **Plugin marketplaces** — Upload release zips (`claude-traceback-*.zip`, `cursor-traceback-*.zip`) from GitHub Releases to Cursor and Claude plugin distribution flows
 
 ## After clone (maintainers)
@@ -24,7 +24,7 @@ Manual steps before publishing this repository publicly under MIT license.
 ```sh
 npm ci
 npm run build
-npx traceback-setup --plugin   # per repo; merges telemetry env into MCP config
+npx -y -p @yavdaanalytics/traceback traceback-setup --plugin   # per repo; merges telemetry env into MCP config
 ```
 
 ## Opt-out reference (for users)

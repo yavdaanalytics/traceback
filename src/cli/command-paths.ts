@@ -15,8 +15,17 @@ export function mcpServerEntryDev(serverEntryPath: string): { command: string; a
   return { command: "node", args: [serverEntryPath] };
 }
 
+/** npm package name (unscoped `traceback` is taken by an unrelated 2011 call-stack lib). */
+export const TRACEBACK_NPM_PACKAGE = "@yavdaanalytics/traceback";
+
 export function mcpServerEntryPortable(): { command: string; args: string[] } {
-  return { command: "npx", args: ["-y", "traceback"] };
+  return { command: "npx", args: ["-y", TRACEBACK_NPM_PACKAGE] };
+}
+
+/** Run a package bin via npx without requiring a global install. */
+export function npxPackageBin(bin: string, extraArgs: string[] = []): string {
+  const parts = ["npx", "-y", "-p", TRACEBACK_NPM_PACKAGE, bin, ...extraArgs];
+  return parts.join(" ");
 }
 
 export function warmStartCommandDev(

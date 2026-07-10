@@ -18,13 +18,13 @@ Details: [`docs/TELEMETRY.md`](docs/TELEMETRY.md). Plain `traceback-setup` promp
 **Recommended — one global install for all repositories:**
 
 ```sh
-npm install -g traceback   # optional
-traceback-setup            # or: npx traceback-setup
+npm install -g @yavdaanalytics/traceback   # optional
+traceback-setup                            # or: npx -y -p @yavdaanalytics/traceback traceback-setup
 ```
 
 When prompted `Enable traceback for ALL repositories on this machine? [Y/n]`, accept the default **Yes** to configure:
 
-- **Portable global MCP** — `npx -y traceback` in `~/.cursor/mcp.json` and `~/.claude/.mcp.json` (create-if-missing)
+- **Portable global MCP** — `npx -y @yavdaanalytics/traceback` in `~/.cursor/mcp.json` and `~/.claude/.mcp.json` (create-if-missing)
 - **Global git hooks** — `~/.traceback/hooks` via `core.hooksPath` (post-commit indexing on every repo; see [§6 — global hook, per-repo scope](#global-post-commit-hook-per-repo-scope))
 - **Global Cursor hooks** — `~/.cursor/hooks.json` (repo resolved from `workspace_roots` / `cwd`)
 - **Claude Code hooks** — `~/.claude/settings.json` warm-start MCP hooks
@@ -39,7 +39,7 @@ Verify: `traceback-setup --doctor`
 
 ```sh
 cd your-repo
-npx traceback-setup --repo-only
+npx -y -p @yavdaanalytics/traceback traceback-setup --repo-only
 ```
 
 This installs:
@@ -66,7 +66,7 @@ Dev mode (absolute `dist/` paths): `TRACEBACK_DEV=1 traceback-setup`
 | Cursor | `~/.cursor/hooks.json` (global) or `.cursor/hooks.json` + `.cursor/rules/traceback.mdc` (per-repo) | `beforeReadFile` injects scoped context; `preToolUse` blocks `Grep`/`Glob` until `search_with_fallback` runs; rule mandates MCP as first tool call |
 | Windsurf | `.windsurf/hooks.json` + `.windsurf/mcp.json` | `pre_user_prompt` hook runs warm-start before each prompt |
 
-Manual warm-start CLI: `npx traceback-warmstart --format plain --query "your question" --repo-path .`
+Manual warm-start CLI: `npx -y -p @yavdaanalytics/traceback traceback-warmstart --format plain --query "your question" --repo-path .`
 
 ## Host-first routing (skill gate before MCP)
 
@@ -91,12 +91,12 @@ Hooks and MCP entries match `portableCursorHooksConfig` / `portableClaudeHooksCo
 After enabling the plugin in your IDE, run **per repo**:
 
 ```sh
-npx traceback-setup --plugin
+npx -y -p @yavdaanalytics/traceback traceback-setup --plugin
 ```
 
 Setup prints what is collected, states that sharing defaults **on** for plugin installs, and how to opt out (`n` at the prompt, or `traceback-telemetry disable` later). Non-interactive `--plugin` runs auto-enable sharing.
 
-Use plain `npx traceback-setup` if you prefer default-off sharing (`[y/N]`).
+Use plain `npx -y -p @yavdaanalytics/traceback traceback-setup` if you prefer default-off sharing (`[y/N]`).
 
 ## 2. Using traceback in Your IDE
 
@@ -116,7 +116,7 @@ Hosts use **two different names** for traceback:
 | Cursor `CallMcpTool` / tool routing id | config key, or `user-` + key for **global** Cursor installs | `user-traceback` |
 | Claude Code native `mcp_tool` hooks | config key | `server: "traceback"` |
 
-`npx traceback-setup` writes:
+`npx -y -p @yavdaanalytics/traceback traceback-setup` writes:
 
 - `~/.traceback/install.json` — per-host `call_server_id` records
 - `TRACEBACK_MCP_SERVER_ID` in each MCP server `env` block
@@ -306,7 +306,7 @@ First ingest may take up to ~90s while `fastembed` downloads the embedding model
 
 ## 7. Phase 1 verification (real ~/.claude history)
 
-After `npm run build` and `npx traceback-setup`:
+After `npm run build` and `npx -y -p @yavdaanalytics/traceback traceback-setup`:
 
 1. Install global hook once: `traceback-install-global-hook`
 2. Backfill existing sessions: `traceback-ingest --repo c:/source/your-repo` (or make a commit while an IDE session is active)

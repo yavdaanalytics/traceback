@@ -4,7 +4,7 @@
       "command": "npx",
       "args": [
         "-y",
-        "traceback"
+        "@yavdaanalytics/traceback"
       ],
       "env": {
         "TRACEBACK_MCP_SERVER_ID": "traceback",

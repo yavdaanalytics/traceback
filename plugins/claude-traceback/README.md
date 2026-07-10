@@ -21,7 +21,7 @@ Full policy: [`docs/TELEMETRY.md`](../../docs/TELEMETRY.md).
 ## What this package includes
 
 - **Skill** (`skills/traceback/SKILL.md`) — host-first keyword routing metadata
-- **MCP server** (`mcp.json`) — `npx -y traceback` stdio server entry with telemetry env
+- **MCP server** (`mcp.json`) — `npx -y @yavdaanalytics/traceback` stdio server entry with telemetry env
 
 Claude Code auto-discovers the skill on plugin enable. MCP warm-start hooks and per-repo wiring are configured by `traceback-setup --plugin`.
 
@@ -32,7 +32,7 @@ Install this plugin using your Claude marketplace flow for this package source.
 After install, run **once per machine** (recommended):
 
 ```sh
-npx -y traceback-setup --plugin --yes-all-repos
+npx -y -p @yavdaanalytics/traceback traceback-setup --plugin --yes-all-repos
 ```
 
 This configures portable global MCP (`~/.claude/.mcp.json`), Claude warm-start hooks, global git indexing, and skills.
@@ -41,7 +41,7 @@ Optional per-repo MCP merge:
 
 ```sh
 cd your-repo
-npx -y traceback-setup --plugin --repo-only
+npx -y -p @yavdaanalytics/traceback traceback-setup --plugin --repo-only
 ```
 
 Per-repo setup also adds a **Traceback debugging** section to `CLAUDE.md` (creates the file if missing). Refresh with `--claude-md-only`; skip with `--skip-claude-md`.
@@ -97,7 +97,7 @@ Expected value:
 - All install commands are idempotent and safe to re-run.
 - On deferred-schema hosts, call `get_traceback_status` before generic grep/glob.
 - Opt out of telemetry: `traceback-telemetry disable`
-- If global `core.hooksPath` conflicts with company policy, use repo-local hooks: `npx -y traceback-install-hook`.
+- If global `core.hooksPath` conflicts with company policy, use repo-local hooks: `npx -y -p @yavdaanalytics/traceback traceback-install-hook`.
 
 ## Notes for maintainers
 
