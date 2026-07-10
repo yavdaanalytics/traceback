@@ -343,6 +343,8 @@ export function portablePluginMcpConfig(): Record<string, unknown> {
           TRACEBACK_MCP_CONFIG_KEY: TRACEBACK_CONFIG_KEY,
           TRACEBACK_TELEMETRY_OPT_IN: "true",
           TRACEBACK_TELEMETRY_ENDPOINT: DEFAULT_TELEMETRY_ENDPOINT,
+          // Node 22 needs this for node:sqlite; harmless on Node 23+.
+          NODE_OPTIONS: "--experimental-sqlite",
         },
       },
     },

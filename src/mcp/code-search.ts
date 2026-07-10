@@ -26,6 +26,11 @@ export function diffSearch(
 ): string {
   const args = ["log", "-p", "-S", pattern, "--"];
   if (opts.commit_range) {
+    // Reject option-like revisions so values such as `--output=…` cannot be
+    // interpreted as git flags (execFile argv isolation alone is not enough).
+    if (opts.commit_range.startsWith("-")) {
+      return "";
+    }
     args.splice(1, 0, opts.commit_range);
   }
   if (opts.files?.length) {

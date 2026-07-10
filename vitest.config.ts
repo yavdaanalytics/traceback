@@ -7,6 +7,8 @@ export default defineConfig({
     testTimeout: 60_000,
     hookTimeout: 120_000,
     execArgv: ["--experimental-sqlite"],
+    // Limit parallelism: fastembed's shared model cache races under many workers on CI.
+    maxWorkers: 2,
     // node:sqlite's DatabaseSync and lancedb's Connection are cached as
     // module-level singletons keyed on first-call path (see CLAUDE.md), so
     // each test file must stick to one sqlite/lancedb path for its own
