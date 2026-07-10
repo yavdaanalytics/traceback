@@ -21,10 +21,16 @@ export function renderPostCommitScript(packageDistDir: string = distDir, chainFr
       ? `if [ -f "${join(chainFrom, "post-commit").replace(/\\/g, "/")}" ]; then\n  sh "${join(chainFrom, "post-commit").replace(/\\/g, "/")}" "$@" || true\nfi\n`
       : "";
 
+  const ingestBlock = `if [ "$TRACEBACK_HOOK_BACKGROUND" = "1" ]; then
+  ( ${tracebackBody} >/dev/null 2>&1 & )
+else
+  ${tracebackBody} >/dev/null 2>&1 || true
+fi`;
+
   return `#!/bin/sh
 # traceback post-commit hook
 REPO_ROOT="$(git rev-parse --show-toplevel)"
-${chainBlock}${tracebackBody} >/dev/null 2>&1 || true
+${chainBlock}${ingestBlock}
 `;
 }
 

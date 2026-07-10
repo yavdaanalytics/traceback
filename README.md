@@ -33,6 +33,12 @@ Query → L1 session cosine (optional) → L2 git pickaxe + intent → L3 scoped
 
 Deep dive: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
 
+## Indexing & backfill
+
+- **Global hook, per-repo data** — setup installs one post-commit hook at `~/.traceback/hooks` (`git config --global core.hooksPath`). A commit in **any** repo triggers ingest scoped to **that** repo only.
+- **Not a machine-wide index** — SQLite + LanceDB live under each repo's `data/` (`traceback.db`, `lancedb/`). Adapters read IDE transcript folders (`~/.claude/projects`, `~/.cursor/projects`, `~/.copilot/session-state`, etc.) but only sessions whose workspace path matches the committing repo are indexed.
+- **Lazy backfill** — nothing is bulk-scanned on install. The first commit in a repo (or `traceback-ingest --repo <path>`) backfills matching sessions from Claude Code, Cursor, and Copilot. Full paths, env overrides, and non-blocking hooks: [`SETUP.md`](SETUP.md) §6.
+
 ## Why it matters
 
 - **Speed** — search hundreds of scoped lines instead of tens of thousands.
@@ -60,7 +66,7 @@ Dashboard: `traceback-dashboard` → `http://127.0.0.1:5555`
 
 | Doc | Contents |
 |-----|----------|
-| [`SETUP.md`](SETUP.md) | Install, hooks, per-IDE warm-start, flags, doctor |
+| [`SETUP.md`](SETUP.md) | Install, hooks, indexing/backfill, per-IDE warm-start, flags, doctor |
 | [`docs/API.md`](docs/API.md) | All MCP tools (28 registered) |
 | [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | Funnel layers, storage, widening vs HITL |
 | [`docs/TELEMETRY.md`](docs/TELEMETRY.md) | Schema, KPIs, opt-in/out, upload |

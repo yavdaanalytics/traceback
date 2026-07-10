@@ -2,19 +2,14 @@ import { mkdirSync, mkdtempSync, writeFileSync, utimesSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { execFileSync } from "node:child_process";
+import { encodeClaudeProjectDir } from "../../src/adapters/path-encoding.js";
 
 export const PROMPT_CAPTURE_SESSION_ID = "prompt-capture-session";
 export const PROMPT_CAPTURE_QUERY = "oauth authentication token refresh logout";
 export const PROMPT_CAPTURE_USER_TEXT =
   "Fix OAuth authentication token refresh loop causing users to be logged out";
 
-/** Claude Code encodes project paths as e.g. `c--source-traceback`. */
-export function encodeClaudeProjectDir(projectPath: string): string {
-  return projectPath
-    .replace(/\\/g, "/")
-    .replace(/^([a-zA-Z]):\//, "$1--")
-    .replace(/\//g, "-");
-}
+export { encodeClaudeProjectDir };
 
 export function buildCaptureJsonl(sessionId: string, projectPath: string, now = Date.now()): string {
   const cwd = projectPath.replace(/\\/g, "/");
@@ -103,6 +98,8 @@ export function installPromptCaptureFixture(): PromptCaptureFixture {
   utimesSync(jsonlPath, mtime, mtime);
 
   process.env.TRACEBACK_CLAUDE_PROJECTS_DIR = claudeProjectsDir;
+  process.env.TRACEBACK_CURSOR_PROJECTS_DIR = join(rootDir, "no-cursor-projects");
+  process.env.TRACEBACK_COPILOT_SESSION_STATE_DIR = join(rootDir, "no-copilot-session-state");
   // Isolate from developer machine Cursor/Copilot stores during automated capture tests.
   process.env.TRACEBACK_CURSOR_STORAGE = join(rootDir, "no-cursor-storage");
   process.env.TRACEBACK_COPILOT_STORAGE = join(rootDir, "no-copilot-storage");

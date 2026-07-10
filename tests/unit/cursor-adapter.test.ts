@@ -25,6 +25,7 @@ describe("cursor adapter (fixture)", () => {
       ],
     });
     process.env.TRACEBACK_CURSOR_STORAGE = storageRoot;
+    process.env.TRACEBACK_CURSOR_PROJECTS_DIR = join(storageRoot, "no-cursor-projects");
     adapter = new CursorAdapter();
   });
 

@@ -3,6 +3,7 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import type { NormalizedSession, SessionAdapter, SessionRef, Turn } from "./types.js";
+import { copilotSessionStateDir } from "./path-encoding.js";
 
 function copilotStorageRoot(): string {
   return (
@@ -23,6 +24,14 @@ function resolveProjectPath(workspaceHash: string, storageRoot: string): string 
     // fall through
   }
   return workspaceHash;
+}
+
+interface CopilotSession {
+  sessionId: string;
+  projectPath: string;
+  lastModified: number;
+  transcriptPath: string;
+  turns: Turn[];
 }
 
 function parseChatSessionJson(raw: string, sessionId: string, projectPath: string, filePath: string): {
@@ -66,20 +75,8 @@ function parseChatSessionJson(raw: string, sessionId: string, projectPath: strin
   }
 }
 
-function scanChatSessions(storageRoot: string, since?: number): Array<{
-  sessionId: string;
-  projectPath: string;
-  lastModified: number;
-  transcriptPath: string;
-  turns: Turn[];
-}> {
-  const results: Array<{
-    sessionId: string;
-    projectPath: string;
-    lastModified: number;
-    transcriptPath: string;
-    turns: Turn[];
-  }> = [];
+function scanChatSessions(storageRoot: string, since?: number): CopilotSession[] {
+  const results: CopilotSession[] = [];
   const wsDir = join(storageRoot, "workspaceStorage");
   if (!existsSync(wsDir)) return results;
 
@@ -107,7 +104,7 @@ function scanChatSessions(storageRoot: string, since?: number): Array<{
   return results;
 }
 
-function scanVscdbFallback(storageRoot: string, since?: number): typeof scanChatSessions extends (...args: never) => infer R ? R : never {
+function scanVscdbFallback(storageRoot: string, since?: number): CopilotSession[] {
   const results = scanChatSessions(storageRoot, since);
   const globalDb = join(storageRoot, "globalStorage", "state.vscdb");
   if (!existsSync(globalDb)) return results;
@@ -137,12 +134,160 @@ function scanVscdbFallback(storageRoot: string, since?: number): typeof scanChat
   return results;
 }
 
+export function parseWorkspaceYaml(raw: string): { projectPath?: string; sessionId?: string } {
+  const lines = raw.split("\n");
+  let gitRoot: string | undefined;
+  let cwd: string | undefined;
+  let id: string | undefined;
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (trimmed.startsWith("git_root:")) {
+      gitRoot = trimmed.slice("git_root:".length).trim();
+    } else if (trimmed.startsWith("cwd:")) {
+      cwd = trimmed.slice("cwd:".length).trim();
+    } else if (trimmed.startsWith("id:")) {
+      id = trimmed.slice("id:".length).trim();
+    }
+  }
+  const projectPath = gitRoot || cwd;
+  return { projectPath, sessionId: id };
+}
+
+export function parseCopilotEventsJsonl(
+  raw: string,
+  sessionId: string,
+  projectPath: string,
+  transcriptPath: string,
+  fileMtimeMs: number,
+): CopilotSession | undefined {
+  const turns: Turn[] = [];
+  let turnIndex = 0;
+  let latestTs = fileMtimeMs;
+
+  for (const line of raw.split("\n")) {
+    if (!line.trim()) continue;
+    let event: {
+      type?: string;
+      timestamp?: string;
+      data?: {
+        content?: string;
+        transformedContent?: string;
+        message?: string;
+        text?: string;
+      };
+    };
+    try {
+      event = JSON.parse(line);
+    } catch {
+      continue;
+    }
+
+    if (event.timestamp) {
+      const ts = Date.parse(event.timestamp);
+      if (!Number.isNaN(ts)) latestTs = Math.max(latestTs, ts);
+    }
+
+    if (event.type === "user.message") {
+      const text = event.data?.content ?? event.data?.transformedContent;
+      if (text) {
+        turns.push({
+          turnId: `${sessionId}-user-${turnIndex}`,
+          role: "user",
+          timestamp: event.timestamp ? Date.parse(event.timestamp) : fileMtimeMs,
+          text,
+          toolCalls: [],
+        });
+        turnIndex++;
+      }
+      continue;
+    }
+
+    if (event.type?.startsWith("assistant.")) {
+      const text = event.data?.content ?? event.data?.message ?? event.data?.text;
+      if (text && typeof text === "string") {
+        turns.push({
+          turnId: `${sessionId}-assistant-${turnIndex}`,
+          role: "assistant",
+          timestamp: event.timestamp ? Date.parse(event.timestamp) : fileMtimeMs,
+          text,
+          toolCalls: [],
+        });
+        turnIndex++;
+      }
+    }
+  }
+
+  if (turns.length === 0) return undefined;
+  return {
+    sessionId,
+    projectPath,
+    lastModified: latestTs,
+    transcriptPath,
+    turns,
+  };
+}
+
+export function scanCopilotSessionState(stateRoot: string, since?: number): CopilotSession[] {
+  const results: CopilotSession[] = [];
+  if (!existsSync(stateRoot)) return results;
+
+  let sessionDirs: string[];
+  try {
+    sessionDirs = readdirSync(stateRoot);
+  } catch {
+    return results;
+  }
+
+  for (const sessionId of sessionDirs) {
+    const sessionDir = join(stateRoot, sessionId);
+    const eventsPath = join(sessionDir, "events.jsonl");
+    if (!existsSync(eventsPath)) continue;
+
+    let projectPath = sessionId;
+    const workspaceYaml = join(sessionDir, "workspace.yaml");
+    if (existsSync(workspaceYaml)) {
+      try {
+        const yaml = parseWorkspaceYaml(readFileSync(workspaceYaml, "utf-8"));
+        if (yaml.projectPath) projectPath = yaml.projectPath;
+      } catch {
+        // keep default
+      }
+    }
+
+    let raw: string;
+    let fileMtimeMs: number;
+    try {
+      raw = readFileSync(eventsPath, "utf-8");
+      fileMtimeMs = statSync(eventsPath).mtimeMs;
+    } catch {
+      continue;
+    }
+
+    const session = parseCopilotEventsJsonl(raw, sessionId, projectPath, eventsPath, fileMtimeMs);
+    if (!session) continue;
+    if (since && session.lastModified < since) continue;
+    results.push(session);
+  }
+  return results;
+}
+
+function collectAllSessions(since?: number): CopilotSession[] {
+  return [
+    ...scanVscdbFallback(copilotStorageRoot(), since),
+    ...scanCopilotSessionState(copilotSessionStateDir(), since),
+  ];
+}
+
 export class CopilotAdapter implements SessionAdapter {
   readonly id = "copilot";
 
   isAvailable(): boolean {
     const root = copilotStorageRoot();
-    return existsSync(root) || existsSync(join(homedir(), ".copilot", "session-store.db"));
+    return (
+      existsSync(root) ||
+      existsSync(join(homedir(), ".copilot", "session-store.db")) ||
+      existsSync(copilotSessionStateDir())
+    );
   }
 
   discover(since?: number): SessionRef[] {
@@ -156,7 +301,7 @@ export class CopilotAdapter implements SessionAdapter {
   listSessions(since?: number): SessionRef[] {
     if (!this.isAvailable()) return [];
     const byId = new Map<string, SessionRef>();
-    for (const session of scanVscdbFallback(copilotStorageRoot(), since)) {
+    for (const session of collectAllSessions(since)) {
       const existing = byId.get(session.sessionId);
       if (!existing || session.lastModified > existing.lastModified) {
         byId.set(session.sessionId, {
@@ -173,8 +318,7 @@ export class CopilotAdapter implements SessionAdapter {
   }
 
   loadSession(ref: SessionRef): NormalizedSession {
-    const all = scanVscdbFallback(copilotStorageRoot());
-    const match = all.find((s) => s.sessionId === ref.sessionId);
+    const match = collectAllSessions().find((s) => s.sessionId === ref.sessionId);
     if (!match) {
       throw new Error(`CopilotAdapter.loadSession: session ${ref.sessionId} not found`);
     }

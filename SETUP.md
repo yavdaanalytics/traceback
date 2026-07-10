@@ -25,7 +25,7 @@ traceback-setup            # or: npx traceback-setup
 When prompted `Enable traceback for ALL repositories on this machine? [Y/n]`, accept the default **Yes** to configure:
 
 - **Portable global MCP** — `npx -y traceback` in `~/.cursor/mcp.json` and `~/.claude/.mcp.json` (create-if-missing)
-- **Global git hooks** — `~/.traceback/hooks` via `core.hooksPath` (post-commit indexing on every repo)
+- **Global git hooks** — `~/.traceback/hooks` via `core.hooksPath` (post-commit indexing on every repo; see [§6 — global hook, per-repo scope](#global-post-commit-hook-per-repo-scope))
 - **Global Cursor hooks** — `~/.cursor/hooks.json` (repo resolved from `workspace_roots` / `cwd`)
 - **Claude Code hooks** — `~/.claude/settings.json` warm-start MCP hooks
 - **Global git excludes** — `core.excludesFile` patterns for `/data/traceback.db`, `/data/lancedb/`, `/.traceback/` (no `.gitignore` pollution)
@@ -215,7 +215,7 @@ IDE (Claude Code, Cursor, VS Code, Windsurf)
        ├─► L3 search_sessions_grep      (scoped → widened grep)        ← always
        ├─► L4 ast / diff / keyword      (refinements)
        │
-       └─► Data layer (auto-indexed by global post-commit hook)
+       └─► Data layer (auto-indexed by global post-commit hook — per-repo `data/`)
             ├─► LanceDB (data/lancedb/) — turn + commit embeddings
             └─► SQLite (data/traceback.db) — sessions, commits, telemetry
 ```
@@ -230,12 +230,84 @@ Session data and telemetry live in:
 
 Both are auto-created on first session ingestion.
 
+### Global post-commit hook (per-repo scope)
+
+traceback uses a **single global** git hook — not one hook per repository:
+
+| Aspect | Behavior |
+|--------|----------|
+| **Installation** | `~/.traceback/hooks/post-commit` + `git config --global core.hooksPath` |
+| **Trigger** | Every `git commit` in any repository on the machine |
+| **Repo detection** | Hook runs `git rev-parse --show-toplevel` and passes that path to `traceback-hook-entry` |
+| **Ingest filter** | Only IDE sessions whose workspace path matches the committing repo |
+| **Storage** | `<repo>/data/traceback.db` and `<repo>/data/lancedb/` — not shared across repos |
+
+```
+git commit (any repo)
+  → global post-commit hook (~/.traceback/hooks)
+  → REPO_ROOT = git rev-parse --show-toplevel
+  → scan ~/.claude/projects, ~/.cursor/projects, ~/.copilot/..., AppData vscdb, etc.
+  → keep sessions where project path == REPO_ROOT
+  → write embeddings + SQLite under REPO_ROOT/data/
+```
+
+There is **no bulk scan on install** — indexing is lazy. The first commit in a repo after setup effectively backfills that repo's matching sessions from IDE storage. The hook also links the most recently active session (within 15 minutes) to the new commit SHA.
+
+**Non-blocking ingest:** set user-level `TRACEBACK_HOOK_BACKGROUND=1`, then re-run `traceback-install-global-hook` so large first-time ingests run detached and do not block `git commit`. MCP `env` in `mcp.json` does **not** apply to git hooks — use OS user environment variables.
+
+**Manual backfill:** `traceback-ingest --repo <path>` uses the same per-repo filter without waiting for a commit (see below).
+
+### IDE session storage (what gets indexed)
+
+Indexing is **per git repo** (`data/` under the repo root). Adapters read these transcript locations (Windows paths shown; macOS/Linux use `~` equivalents):
+
+| Adapter | Storage path | Format |
+|---------|--------------|--------|
+| **claude-code** | `%USERPROFILE%\.claude\projects\<encoded-project>\` | `*.jsonl` session transcripts |
+| **cursor** (legacy) | `%APPDATA%\Cursor\User\workspaceStorage\<hash>\state.vscdb` | Composer chat in SQLite |
+| **cursor** (agent) | `%USERPROFILE%\.cursor\projects\<encoded-path>\agent-transcripts\` | `<session-id>.jsonl` |
+| **copilot** (VS Code) | `%APPDATA%\Code\User\workspaceStorage\<hash>\chatSessions\` | `*.json` chat sessions |
+| **copilot** (agent) | `%USERPROFILE%\.copilot\session-state\<uuid>\` | `events.jsonl` + `workspace.yaml` |
+
+Folder names under `.claude/projects` and `.cursor/projects` encode the project path (e.g. `c--source-traceback` → `c:\source\traceback`).
+
+### Storage path overrides (env)
+
+| Variable | Default | Purpose |
+|----------|---------|---------|
+| `TRACEBACK_CLAUDE_PROJECTS_DIR` | `~/.claude/projects` | Claude JSONL root |
+| `TRACEBACK_CURSOR_STORAGE` | `%APPDATA%/Cursor/User` | Legacy composer vscdb |
+| `TRACEBACK_CURSOR_PROJECTS_DIR` | `~/.cursor/projects` | Agent transcript JSONL |
+| `TRACEBACK_COPILOT_STORAGE` | `%APPDATA%/Code/User` | VS Code chatSessions |
+| `TRACEBACK_COPILOT_SESSION_STATE_DIR` | `~/.copilot/session-state` | Copilot agent events |
+| `TRACEBACK_HOOK_BACKGROUND` | unset (sync) | Set to `1` to detach post-commit ingest |
+
+MCP `env` in `mcp.json` applies to the MCP server only. Git hooks read **user-level** environment variables.
+
+### Backfill (without blocking git or MCP)
+
+Use **`traceback-ingest`** for scoped, out-of-band indexing:
+
+```sh
+npm run build
+traceback-ingest --repo c:/source/your-repo
+traceback-ingest --repo c:/source/your-repo --adapter-id claude-code
+traceback-ingest --repo c:/source/your-repo --adapter-id cursor
+traceback-ingest --repo c:/source/your-repo --adapter-id copilot --json
+```
+
+Always pass `--repo` (or run from inside the git repo). Ingest is filtered to sessions whose workspace path matches that repo.
+
+On Windows, set `TRACEBACK_HOOK_BACKGROUND=1` in user environment variables before re-running `traceback-install-global-hook` so large first-time ingests do not block `git commit`.
+
+First ingest may take up to ~90s while `fastembed` downloads the embedding model.
+
 ## 7. Phase 1 verification (real ~/.claude history)
 
 After `npm run build` and `npx traceback-setup`:
 
 1. Install global hook once: `traceback-install-global-hook`
-2. Make at least one commit in the repo while a Claude Code session is active (or re-ingest via MCP `ingest_session`)
+2. Backfill existing sessions: `traceback-ingest --repo c:/source/your-repo` (or make a commit while an IDE session is active)
 3. Run the opt-in E2E script:
 
 ```sh
@@ -281,6 +353,12 @@ Covers:
 **Git hook not triggering?**
 - Verify `~/.traceback/hooks/post-commit` exists (or check `git config --global core.hooksPath`).
 - Try a manual commit: `git commit --allow-empty -m "test hook"`.
+- After a successful run, check `<repo>/data/traceback.db` exists and `.git/traceback-hook.log` for errors.
+
+**Hook runs but no sessions indexed?**
+- Ingest is scoped to the committing repo — sessions must have a workspace path matching that repo (Claude/Cursor encoded project dirs, Copilot `workspace.yaml` `git_root`/`cwd`).
+- Backfill existing history without a commit: `traceback-ingest --repo c:/path/to/your-repo`.
+- First ingest can take ~90s while `fastembed` downloads the embedding model.
 
 **Want to opt out of anonymous telemetry?**
 - During setup: answer `n` at the sharing prompt.
