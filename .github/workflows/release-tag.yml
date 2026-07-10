@@ -59,6 +59,7 @@ jobs:
 
       - name: Publish npm package
         env:
+          # Trusted publishing (OIDC) is preferred; NPM_TOKEN is optional fallback.
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: node scripts/publish-npm.mjs --access public --provenance
 
