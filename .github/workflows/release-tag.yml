@@ -37,8 +37,12 @@ jobs:
       - name: Build
         run: npm run build
 
+      - name: Warm fastembed model cache
+        run: |
+          node --input-type=module -e "import { FlagEmbedding, EmbeddingModel } from 'fastembed'; await FlagEmbedding.init({ model: EmbeddingModel.AllMiniLML6V2 }); console.log('fastembed ready');"
+
       - name: Test
-        run: npm test
+        run: npm test -- --maxWorkers=1
 
       - name: Sync plugin manifest versions
         run: npm run release:sync-plugins

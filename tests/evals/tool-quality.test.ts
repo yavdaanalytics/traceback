@@ -65,7 +65,7 @@ describe("eval: recall quality (golden set, recall@1)", () => {
       })),
     );
     await upsertTurnEmbeddings(dataDir, rows);
-  }, 60_000);
+  }, 180_000);
 
   it("achieves 100% recall@1 on the golden query set (5/5 known past-session queries)", async () => {
     let correct = 0;
@@ -78,7 +78,7 @@ describe("eval: recall quality (golden set, recall@1)", () => {
     // golden set means recall quality genuinely degraded (embedding model
     // swap, distance metric change, etc.) - not noise.
     expect(correct).toBe(queries.length);
-  }, 120_000);
+  }, 180_000);
 });
 
 describe("eval: warm-start funnel efficiency vs unscoped grep", () => {
