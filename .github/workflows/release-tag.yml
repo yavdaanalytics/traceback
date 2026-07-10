@@ -24,9 +24,14 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
+          # Trusted publishing requires Node >= 22.14.0 and npm CLI >= 11.5.1.
           node-version: "22.14.0"
           registry-url: "https://registry.npmjs.org"
+          # Avoid caching release builds (npm trusted-publishing guidance).
           cache: "npm"
+
+      - name: Upgrade npm for OIDC trusted publishing
+        run: npm install -g npm@latest
 
       - name: Install dependencies
         run: npm ci
@@ -57,12 +62,16 @@ jobs:
           cd dist/plugins
           sha256sum *.zip > checksums.txt
 
-      - name: Publish npm package
-        env:
-          # Trusted publishing (OIDC) is preferred; NPM_TOKEN is optional fallback.
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-        run: node scripts/publish-npm.mjs --access public --provenance
-
+      # OIDC trusted publishing: do NOT set NODE_AUTH_TOKEN here.
+      # setup-node writes `_authToken=${NODE_AUTH_TOKEN}` into the runner npmrc;
+      # an empty/invalid token makes npm skip OIDC and fail with E404/ENEEDAUTH.
+      - name: Publish npm package via OIDC
+        run: |
+          if [ -n "${NPM_CONFIG_USERCONFIG:-}" ] && [ -f "$NPM_CONFIG_USERCONFIG" ]; then
+            sed -i '/_authToken/d' "$NPM_CONFIG_USERCONFIG"
+          fi
+          npm --version
+          node scripts/publish-npm.mjs --access public --provenance
       - name: Verify package on npm registry
         run: npm run release:ensure-published -- --wait --timeout-ms 120000
 
