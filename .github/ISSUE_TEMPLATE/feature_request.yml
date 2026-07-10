@@ -1,0 +1,41 @@
+name: Feature request
+description: Suggest an enhancement
+title: "[feat] "
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Describe the problem first, then the proposed change. Usage questions belong in [Discussions](https://github.com/yavdaanalytics/traceback/discussions).
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What pain point or gap are you hitting?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: How should traceback behave instead?
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Workarounds or other approaches you tried.
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - MCP tools / warm-start funnel
+        - Adapters (Claude / Cursor / Copilot)
+        - Install / hooks / setup
+        - Telemetry / dashboard
+        - Docs
+        - Other
+    validations:
+      required: true

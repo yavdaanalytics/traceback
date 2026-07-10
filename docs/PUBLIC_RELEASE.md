@@ -13,14 +13,17 @@ Manual steps before publishing this repository publicly under MIT license.
 - [ ] **Collector live** — Ensure `https://traceback.yavda.com` serves `traceback-metrics` before plugin default endpoint ships. See [`deploy/README.md`](../deploy/README.md) for self-host instructions.
 - [ ] **Privacy review** — Plugin installs default sharing ON with disclosure; confirm this meets your jurisdiction.
 - [x] **GitHub Security** — `SECURITY.md`, private vulnerability reporting, secret scanning (+ push protection), Dependabot alerts/security updates, CodeQL workflow, `.github/dependabot.yml`. Skip “Code quality findings” unless you want the extra noise.
+- [x] **Community health** — `CONTRIBUTING.md`, `CODE_OF_CONDUCT.md`, `SUPPORT.md`, issue templates, PR template. Optional later: `CODEOWNERS` with a real GitHub team or username.
+- [x] **Repo hygiene settings** — delete branch on merge; Projects off; Discussions on; Wiki off.
 
 ## Publishing
 
-- [ ] **GitHub** — Create or open public repo: https://github.com/yavdaanalytics/traceback
+- [x] **GitHub** — Public repo: https://github.com/yavdaanalytics/traceback
 - [ ] **npm** — Package is `@yavdaanalytics/traceback` (unscoped `traceback` is taken). Set repo secret `NPM_TOKEN` to an npm **granular access token** with:
   - Permission: **Read and write** for packages (or publish on `@yavdaanalytics`)
-  - **Bypass two-factor authentication** enabled (required for CI `npm publish`)
+  - **Bypass two-factor authentication** enabled (required for first CI `npm publish`; prefer [trusted publishing](https://docs.npmjs.com/trusted-publishers) after `0.1.0` exists)
   - Then tag `v*` to trigger [`.github/workflows/release-tag.yml`](../.github/workflows/release-tag.yml). `prepublishOnly` warms fastembed, then runs `build` + serialized `test` before every `npm publish`.
+  - After first publish: configure Trusted Publisher → GitHub Actions (`yavdaanalytics` / `traceback` / `release-tag.yml`), then revoke the bypass-2FA token when ready.
 - [ ] **Verify publish** — `npm run release:ensure-published` (add `--wait` after CI). Exit 1 means the version is not on the registry yet.
 
 ### If release CI fails before publish (package 404)

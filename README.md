@@ -74,6 +74,10 @@ Dashboard: `traceback-dashboard` → `http://127.0.0.1:5555`
 | [`docs/TELEMETRY.md`](docs/TELEMETRY.md) | Schema, KPIs, opt-in/out, upload |
 | [`SKILL.md`](SKILL.md) | Host-first routing for agents |
 | [`docs/DEV.md`](docs/DEV.md) | Tests, security gates, bench SLAs |
+| [`CONTRIBUTING.md`](CONTRIBUTING.md) | How to contribute (clone → PR) |
+| [`CODE_OF_CONDUCT.md`](CODE_OF_CONDUCT.md) | Community standards |
+| [`SECURITY.md`](SECURITY.md) | Vulnerability reporting |
+| [`SUPPORT.md`](SUPPORT.md) | Where to ask for help |
 | [`CLAUDE.md`](CLAUDE.md) | Contributor stack, conventions, testing |
 | [`AGENTS.md`](AGENTS.md) | Short pointer for coding agents |
 | [`docs/DOCUMENTATION.md`](docs/DOCUMENTATION.md) | **Doc layering policy** (where to put new content) |
@@ -92,11 +96,11 @@ Dashboard: `traceback-dashboard` → `http://127.0.0.1:5555`
 npm run build && npm test
 ```
 
-Contributors: read [`CLAUDE.md`](CLAUDE.md) and [`docs/DOCUMENTATION.md`](docs/DOCUMENTATION.md) before editing docs.
+See [`CONTRIBUTING.md`](CONTRIBUTING.md) and [`docs/DEV.md`](docs/DEV.md). Coding agents: [`CLAUDE.md`](CLAUDE.md) and [`docs/DOCUMENTATION.md`](docs/DOCUMENTATION.md).
 
 ## Contributing
 
-Feedback, bug reports, and PRs welcome. Open a GitHub issue for feature requests and known gaps.
+Feedback, bug reports, and PRs welcome. Please read [`CONTRIBUTING.md`](CONTRIBUTING.md) and the [`CODE_OF_CONDUCT.md`](CODE_OF_CONDUCT.md). Security reports: [`SECURITY.md`](SECURITY.md). Help: [`SUPPORT.md`](SUPPORT.md).
 
 ---
 

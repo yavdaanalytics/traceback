@@ -1,0 +1,63 @@
+name: Bug report
+description: Something is broken or behaves incorrectly
+title: "[bug] "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for filing a bug. Security issues → [private advisory](https://github.com/yavdaanalytics/traceback/security/advisories/new), not this form.
+  - type: textarea
+    id: description
+    attributes:
+      label: What happened?
+      description: Clear description of the unexpected behavior.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+      description: Minimal steps, commands, and relevant config (redact secrets).
+      placeholder: |
+        1. npm ci && npm run build
+        2. ...
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: traceback version / commit
+      placeholder: "0.1.0 or git SHA"
+    validations:
+      required: true
+  - type: input
+    id: node
+    attributes:
+      label: Node.js version
+      placeholder: "22.12.0"
+    validations:
+      required: true
+  - type: dropdown
+    id: os
+    attributes:
+      label: OS
+      options:
+        - Windows
+        - macOS
+        - Linux
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs / stack traces
+      description: Paste relevant output (no tokens or `.env` contents).
+      render: text
