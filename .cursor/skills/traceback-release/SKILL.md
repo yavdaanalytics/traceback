@@ -124,7 +124,7 @@ Pushing `v*` runs `release-tag.yml`, which:
 2. Builds, warms fastembed, tests
 3. Syncs plugins again
 4. Zips Claude + Cursor plugin folders
-5. Publishes `@yavdaanalytics/traceback` to npm (OIDC trusted publishing; `NPM_TOKEN` fallback)
+5. Publishes `@yavdaanalytics/traceback` to npm via **OIDC trusted publishing** (no `NODE_AUTH_TOKEN`; workflow upgrades npm CLI and strips setup-node `_authToken` so OIDC is not skipped). `NPM_TOKEN` is not used on the publish step.
 6. Creates a GitHub Release with plugin zips + checksums
 7. Commits plugin manifest sync back to default branch if needed
 
