@@ -7,6 +7,14 @@
   "publishConfig": {
     "access": "public"
   },
+  "files": [
+    "dist",
+    "SKILL.md",
+    "SETUP.md",
+    "README.md",
+    "LICENSE",
+    "SECURITY.md"
+  ],
   "repository": {
     "type": "git",
     "url": "git+https://github.com/yavdaanalytics/traceback.git"
