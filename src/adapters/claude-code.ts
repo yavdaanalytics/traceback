@@ -2,14 +2,11 @@ import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import type { NormalizedSession, SessionAdapter, SessionRef, ToolCall, Turn } from "./types.js";
-
-function projectsDir(): string {
-  return process.env.TRACEBACK_CLAUDE_PROJECTS_DIR ?? join(homedir(), ".claude", "projects");
-}
-
-function desanitizeProjectDir(dirName: string): string {
-  return dirName.replace(/^([a-zA-Z])--/, "$1:/").replace(/-/g, "/");
-}
+import {
+  claudeProjectsDir,
+  decodeClaudeProjectDir,
+} from "./path-encoding.js";
+import { normalizePath } from "../util/paths.js";
 
 interface RawRecord {
   type?: string;
@@ -121,20 +118,23 @@ function loadHistoryTail(sessionId: string, maxLines = 20): unknown[] {
 }
 
 function findProjectDir(projectPath: string): string | undefined {
-  return readdirSync(projectsDir()).find((d) => desanitizeProjectDir(d) === projectPath);
+  const normalized = normalizePath(projectPath);
+  return readdirSync(claudeProjectsDir()).find(
+    (d) => normalizePath(decodeClaudeProjectDir(d)) === normalized,
+  );
 }
 
 function resolveTranscriptPath(projectDirName: string, sessionId: string): string {
-  const sessionsPath = join(projectsDir(), projectDirName, "sessions", `${sessionId}.jsonl`);
+  const sessionsPath = join(claudeProjectsDir(), projectDirName, "sessions", `${sessionId}.jsonl`);
   if (existsSync(sessionsPath)) return sessionsPath;
-  return join(projectsDir(), projectDirName, `${sessionId}.jsonl`);
+  return join(claudeProjectsDir(), projectDirName, `${sessionId}.jsonl`);
 }
 
 export class ClaudeCodeAdapter implements SessionAdapter {
   readonly id = "claude-code";
 
   isAvailable(): boolean {
-    return existsSync(projectsDir());
+    return existsSync(claudeProjectsDir());
   }
 
   discover(since?: number): SessionRef[] {
@@ -150,17 +150,17 @@ export class ClaudeCodeAdapter implements SessionAdapter {
     const refs: SessionRef[] = [];
     const seen = new Set<string>();
 
-    for (const projectDir of readdirSync(projectsDir())) {
-      const projectPath = join(projectsDir(), projectDir);
+    for (const projectDir of readdirSync(claudeProjectsDir())) {
+      const projectPathOnDisk = join(claudeProjectsDir(), projectDir);
       let stat;
       try {
-        stat = statSync(projectPath);
+        stat = statSync(projectPathOnDisk);
       } catch {
         continue;
       }
       if (!stat.isDirectory()) continue;
 
-      const scanDirs = [projectPath, join(projectPath, "sessions")];
+      const scanDirs = [projectPathOnDisk, join(projectPathOnDisk, "sessions")];
       for (const dir of scanDirs) {
         if (!existsSync(dir)) continue;
         for (const file of readdirSync(dir)) {
@@ -177,7 +177,7 @@ export class ClaudeCodeAdapter implements SessionAdapter {
           refs.push({
             adapterId: this.id,
             sessionId,
-            projectPath: desanitizeProjectDir(projectDir),
+            projectPath: decodeClaudeProjectDir(projectDir),
             lastModified,
             sizeHint: fileStat.size,
             transcriptPath: filePath,
@@ -197,7 +197,7 @@ export class ClaudeCodeAdapter implements SessionAdapter {
     const transcriptRef = ref.transcriptPath ?? resolveTranscriptPath(projectDirName, ref.sessionId);
     const turns = parseJsonlFile(transcriptRef);
 
-    const subagentsDir = join(projectsDir(), projectDirName, ref.sessionId, "subagents");
+    const subagentsDir = join(claudeProjectsDir(), projectDirName, ref.sessionId, "subagents");
     if (existsSync(subagentsDir)) {
       for (const file of readdirSync(subagentsDir)) {
         if (!file.startsWith("agent-") || !file.endsWith(".jsonl")) continue;

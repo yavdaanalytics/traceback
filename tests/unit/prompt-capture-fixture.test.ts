@@ -2,8 +2,8 @@ import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { rmSync } from "node:fs";
 import { ClaudeCodeAdapter } from "../../src/adapters/claude-code.js";
 import { normalizePath } from "../../src/util/paths.js";
+import { decodeClaudeProjectDir, encodeClaudeProjectDir } from "../../src/adapters/path-encoding.js";
 import {
-  encodeClaudeProjectDir,
   installPromptCaptureFixture,
   PROMPT_CAPTURE_SESSION_ID,
   type PromptCaptureFixture,
@@ -26,8 +26,7 @@ afterAll(() => {
 describe("prompt capture fixture", () => {
   it("round-trips Claude project path encoding", () => {
     const encoded = encodeClaudeProjectDir(fixture.repoDir);
-    const desanitized = encoded.replace(/^([a-zA-Z])--/, "$1:/").replace(/-/g, "/");
-    expect(normalizePath(desanitized)).toBe(normalizePath(fixture.repoDir));
+    expect(normalizePath(decodeClaudeProjectDir(encoded))).toBe(normalizePath(fixture.repoDir));
   });
 
   it("claude adapter discovers the fixture session", () => {
