@@ -18,7 +18,11 @@ describe("encodeClaudeProjectDir / decodeClaudeProjectDir", () => {
     mkdirSync(projectPath, { recursive: true });
 
     const encoded = encodeClaudeProjectDir(projectPath);
-    expect(encoded).toContain("--");
+    if (process.platform === "win32") {
+      expect(encoded).toContain("--");
+    } else {
+      expect(encoded.startsWith("-")).toBe(true);
+    }
     expect(normalizePath(decodeClaudeProjectDir(encoded))).toBe(normalizePath(projectPath));
   });
 
