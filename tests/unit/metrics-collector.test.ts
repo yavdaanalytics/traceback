@@ -93,7 +93,7 @@ describe("metrics collector", () => {
     const privacyResponse = await fetch(`${baseUrl}/privacy`);
     expect(privacyResponse.status).toBe(200);
     const privacyHtml = await privacyResponse.text();
-    expect(privacyHtml).toContain("Never collect");
+    expect(privacyHtml).toContain("We never collect");
     expect(privacyHtml).toContain("traceback-telemetry disable");
   });
 

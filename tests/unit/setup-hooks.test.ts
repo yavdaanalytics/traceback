@@ -182,13 +182,13 @@ describe("warmStartScriptPath", () => {
 });
 
 describe("installTracebackSkills", () => {
-  it("installs skill into detected host paths idempotently", () => {
-    const cursorProjectSkills = join(repoRoot, ".tmp-cursor-project-skills");
+  it("installs skill into global host paths idempotently", () => {
     const cursorGlobalSkills = join(repoRoot, ".tmp-cursor-global-skills");
     const claudeSkills = join(repoRoot, ".tmp-claude-skills");
-    process.env.TRACEBACK_CURSOR_PROJECT_SKILLS_DIR = cursorProjectSkills;
+    const cursorProjectSkills = join(repoRoot, ".tmp-cursor-project-skills");
     process.env.TRACEBACK_CURSOR_SKILLS_DIR = cursorGlobalSkills;
     process.env.TRACEBACK_CLAUDE_SKILLS_DIR = claudeSkills;
+    process.env.TRACEBACK_CURSOR_PROJECT_SKILLS_DIR = cursorProjectSkills;
     try {
       const skillSource = "<!-- traceback-skill -->\nname: traceback\n";
       writeFileSync(join(repoRoot, "SKILL.md"), skillSource, "utf-8");
@@ -197,14 +197,14 @@ describe("installTracebackSkills", () => {
       const projectPath = join(cursorProjectSkills, "traceback", "SKILL.md");
       const globalPath = join(cursorGlobalSkills, "traceback", "SKILL.md");
       const claudePath = join(claudeSkills, "traceback", "SKILL.md");
-      expect(existsSync(projectPath)).toBe(true);
+      expect(existsSync(projectPath)).toBe(false);
       expect(existsSync(globalPath)).toBe(true);
       expect(existsSync(claudePath)).toBe(true);
-      expect(readFileSync(projectPath, "utf-8")).toContain("name: traceback");
+      expect(readFileSync(globalPath, "utf-8")).toContain("name: traceback");
 
-      const first = readFileSync(projectPath, "utf-8");
+      const first = readFileSync(globalPath, "utf-8");
       installTracebackSkills(repoRoot);
-      const second = readFileSync(projectPath, "utf-8");
+      const second = readFileSync(globalPath, "utf-8");
       expect(second).toBe(first);
     } finally {
       delete process.env.TRACEBACK_CURSOR_PROJECT_SKILLS_DIR;
@@ -214,11 +214,10 @@ describe("installTracebackSkills", () => {
   });
 
   it("falls back to package SKILL.md when repo root has none", () => {
-    const cursorProjectSkills = join(repoRoot, ".tmp-cursor-project-skills-pkg");
+    const cursorGlobalSkills = join(repoRoot, ".tmp-cursor-global-skills-pkg");
     const fakePkgRoot = join(repoRoot, "fake-npm-pkg");
     const fakeDist = join(fakePkgRoot, "dist");
-    process.env.TRACEBACK_CURSOR_PROJECT_SKILLS_DIR = cursorProjectSkills;
-    process.env.TRACEBACK_CURSOR_SKILLS_DIR = join(repoRoot, ".tmp-unused-global");
+    process.env.TRACEBACK_CURSOR_SKILLS_DIR = cursorGlobalSkills;
     process.env.TRACEBACK_CLAUDE_SKILLS_DIR = join(repoRoot, ".tmp-unused-claude");
     try {
       mkdirSync(fakeDist, { recursive: true });
@@ -229,11 +228,10 @@ describe("installTracebackSkills", () => {
       );
 
       installTracebackSkills(repoRoot, fakeDist);
-      const projectPath = join(cursorProjectSkills, "traceback", "SKILL.md");
-      expect(existsSync(projectPath)).toBe(true);
-      expect(readFileSync(projectPath, "utf-8")).toContain("name: traceback-from-package");
+      const globalPath = join(cursorGlobalSkills, "traceback", "SKILL.md");
+      expect(existsSync(globalPath)).toBe(true);
+      expect(readFileSync(globalPath, "utf-8")).toContain("name: traceback-from-package");
     } finally {
-      delete process.env.TRACEBACK_CURSOR_PROJECT_SKILLS_DIR;
       delete process.env.TRACEBACK_CURSOR_SKILLS_DIR;
       delete process.env.TRACEBACK_CLAUDE_SKILLS_DIR;
     }
