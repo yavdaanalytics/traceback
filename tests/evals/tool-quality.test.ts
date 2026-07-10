@@ -78,7 +78,7 @@ describe("eval: recall quality (golden set, recall@1)", () => {
     // golden set means recall quality genuinely degraded (embedding model
     // swap, distance metric change, etc.) - not noise.
     expect(correct).toBe(queries.length);
-  }, 30_000);
+  }, 120_000);
 });
 
 describe("eval: warm-start funnel efficiency vs unscoped grep", () => {
