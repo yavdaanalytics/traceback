@@ -71,8 +71,10 @@ function osPathFromSegments(drive: string, segments: string[]): string {
     if (segments.length === 0) return `${drive.toUpperCase()}:\\`;
     return `${drive.toUpperCase()}:\\${segments.join("\\")}`;
   }
-  if (segments.length === 0) return `/${drive}/`;
-  return `/${segments.join("/")}`;
+  // Windows-encoded Claude/Cursor folder names (c--… / c-…) should keep a drive
+  // path shape on Unix so discovery matches the original project identity.
+  if (segments.length === 0) return `${drive}:/`;
+  return `${drive}:/${segments.join("/")}`;
 }
 
 function resolvePathFromEncodedTokens(drive: string, tokens: string[]): string | undefined {
