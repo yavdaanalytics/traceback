@@ -31,7 +31,9 @@ jobs:
           cache: "npm"
 
       - name: Upgrade npm for OIDC trusted publishing
-        run: npm install -g npm@latest
+        # Trusted publishing needs npm >= 11.5.1. Do not use npm@latest:
+        # npm 12+ requires Node ^22.22.2 / ^24.15+, which is newer than 22.14.0.
+        run: npm install -g npm@11.5.1
 
       - name: Install dependencies
         run: npm ci

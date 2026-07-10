@@ -29,7 +29,7 @@ npm UI alone is not enough — the workflow must match. This repo’s [`.github/
 
 1. `permissions.id-token: write` (required for OIDC)
 2. `runs-on: ubuntu-latest` (GitHub-hosted; self-hosted is unsupported)
-3. `npm install -g npm@latest` before publish (needs CLI ≥ 11.5.1)
+3. `npm install -g npm@11.5.1` before publish (needs CLI ≥ 11.5.1; avoid `npm@latest` / npm 12 on Node 22.14)
 4. Publish step **without** `NODE_AUTH_TOKEN` (classic tokens block OIDC when empty/invalid)
 5. Strips setup-node’s `_authToken=` line from the runner npmrc before `npm publish`
 

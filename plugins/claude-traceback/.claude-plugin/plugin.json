@@ -2,7 +2,7 @@
   "name": "traceback",
   "displayName": "Traceback",
   "description": "Semantic warm-start for debugging and code search in Claude Code. Anonymous aggregate telemetry is on by default for plugin installs (opt-out available).",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "author": {
     "name": "Traceback"
   },
