@@ -35,6 +35,7 @@
     "release:verify-tag": "node scripts/verify-release-tag.mjs",
     "release:warm-fastembed": "node scripts/warm-fastembed.mjs",
     "release:ensure-published": "node scripts/ensure-npm-published.mjs",
+    "release:publish": "node scripts/publish-npm.mjs --access public",
     "test": "vitest run",
     "test:unit": "vitest run tests/unit",
     "test:integration": "vitest run tests/integration",

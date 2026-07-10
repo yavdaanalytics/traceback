@@ -16,28 +16,36 @@ Manual steps before publishing this repository publicly under MIT license.
 ## Publishing
 
 - [ ] **GitHub** — Create or open public repo: https://github.com/yavdaanalytics/traceback
-- [ ] **npm** — Package is `@yavdaanalytics/traceback` (unscoped `traceback` is taken). Ensure `NPM_TOKEN` can publish to the `yavdaanalytics` org; tag `v*` to trigger [`.github/workflows/release-tag.yml`](../.github/workflows/release-tag.yml). `prepublishOnly` warms fastembed, then runs `build` + serialized `test` before every `npm publish`.
+- [ ] **npm** — Package is `@yavdaanalytics/traceback` (unscoped `traceback` is taken). Set repo secret `NPM_TOKEN` to an npm **granular access token** with:
+  - Permission: **Read and write** for packages (or publish on `@yavdaanalytics`)
+  - **Bypass two-factor authentication** enabled (required for CI `npm publish`)
+  - Then tag `v*` to trigger [`.github/workflows/release-tag.yml`](../.github/workflows/release-tag.yml). `prepublishOnly` warms fastembed, then runs `build` + serialized `test` before every `npm publish`.
 - [ ] **Verify publish** — `npm run release:ensure-published` (add `--wait` after CI). Exit 1 means the version is not on the registry yet.
 
 ### If release CI fails before publish (package 404)
 
-The tag workflow never reached `npm publish`. Fix programmatically:
+The tag workflow never reached a successful `npm publish`. Fix programmatically:
 
 ```sh
-# 1. Confirm missing
+# 1. Confirm missing + classify
 npm run release:ensure-published
 
-# 2. Land the CI fix on the default branch, then retarget the same semver tag
+# 2. If CI failed on tests: land the fix, then retarget the same semver tag
 git push origin main
 git tag -f "v$(node -p "require('./package.json').version")" HEAD
 git push origin ":refs/tags/v$(node -p "require('./package.json').version")"
 git push origin "v$(node -p "require('./package.json').version")"
 
-# 3. Wait for the release-tag run, then:
+# 3. If CI failed on publish with E403 / "bypass 2fa":
+#    create a granular npm token with bypass-2FA, then:
+gh secret set NPM_TOKEN -R yavdaanalytics/traceback < token.txt
+gh workflow run release-tag.yml --ref "v$(node -p "require('./package.json').version")"
+
+# 4. Re-check:
 npm run release:ensure-published -- --wait
 ```
 
-Do **not** bump the package version solely because a tag publish failed — move the existing `v*` tag to the fixed SHA instead.
+Do **not** bump the package version solely because a tag publish failed — move the existing `v*` tag to the fixed SHA (or re-run the workflow on that tag) instead.
 
 ## After clone (maintainers)
 
