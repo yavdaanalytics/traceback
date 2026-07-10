@@ -1,0 +1,11 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Questions & discussions
+    url: https://github.com/yavdaanalytics/traceback/discussions
+    about: Ask usage questions and share ideas here instead of opening an issue.
+  - name: Security vulnerability
+    url: https://github.com/yavdaanalytics/traceback/security/advisories/new
+    about: Report security issues privately (see SECURITY.md).
+  - name: Setup & install docs
+    url: https://github.com/yavdaanalytics/traceback/blob/main/SETUP.md
+    about: Install, hooks, doctor, and per-IDE warm-start.
