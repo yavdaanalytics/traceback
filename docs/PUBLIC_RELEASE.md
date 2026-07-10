@@ -27,6 +27,9 @@ Manual steps before publishing this repository publicly under MIT license.
 
 ### Future releases
 
+Agent-driven checklist (OSS → npm → GitHub Release → Claude/Cursor marketplace handoff):
+[`.cursor/skills/traceback-release/SKILL.md`](../.cursor/skills/traceback-release/SKILL.md).
+
 ```sh
 # bump package.json version, then:
 git tag "v$(node -p "require('./package.json').version")"
