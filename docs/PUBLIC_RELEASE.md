@@ -4,52 +4,40 @@ Manual steps before publishing this repository publicly under MIT license.
 
 ## Repository hygiene
 
-- [ ] **Git history scrub** — If internal files (`ROADMAP.md`, `PROMPT.md`, `deploy/droplet/`, etc.) were ever committed, run `git filter-repo` or publish from a clean branch without that history. `.gitignore` does not remove past commits.
-- [ ] **Verify `.gitignore`** — Confirm internal paths are ignored and untracked (`data/`, `dist/`, `.traceback/`, `.env`, local MCP configs).
-- [ ] **Copyright** — Confirm [`LICENSE`](../LICENSE) copyright holder name is correct.
+- [ ] **Git history scrub** — If internal files (`ROADMAP.md`, `PROMPT.md`, `deploy/droplet/`, etc.) were ever committed, run `git filter-repo` or publish from a clean branch without that history. `.gitignore` does not remove past commits. (Skip if history is already clean for public release.)
+- [x] **Verify `.gitignore`** — Internal paths ignored (`data/`, `dist/`, `.traceback/`, `.env`, local MCP configs).
+- [x] **Copyright** — [`LICENSE`](../LICENSE) holder: Yavda Analytics (2026).
 
 ## Infrastructure
 
-- [ ] **Collector live** — Ensure `https://traceback.yavda.com` serves `traceback-metrics` before plugin default endpoint ships. See [`deploy/README.md`](../deploy/README.md) for self-host instructions.
+- [x] **Collector live** — `https://traceback.yavda.com` serves public metrics / collector API.
 - [ ] **Privacy review** — Plugin installs default sharing ON with disclosure; confirm this meets your jurisdiction.
-- [x] **GitHub Security** — `SECURITY.md`, private vulnerability reporting, secret scanning (+ push protection), Dependabot alerts/security updates, CodeQL workflow, `.github/dependabot.yml`. Skip “Code quality findings” unless you want the extra noise.
-- [x] **Community health** — `CONTRIBUTING.md`, `CODE_OF_CONDUCT.md`, `SUPPORT.md`, issue templates, PR template. Optional later: `CODEOWNERS` with a real GitHub team or username.
+- [x] **GitHub Security** — `SECURITY.md`, private vulnerability reporting, secret scanning (+ push protection), Dependabot alerts/security updates, CodeQL workflow, `.github/dependabot.yml`.
+- [x] **Community health** — `CONTRIBUTING.md`, `CODE_OF_CONDUCT.md`, `SUPPORT.md`, issue/PR templates, `CODEOWNERS` (`@yavdatech`).
 - [x] **Repo hygiene settings** — delete branch on merge; Projects off; Discussions on; Wiki off.
 
 ## Publishing
 
 - [x] **GitHub** — Public repo: https://github.com/yavdaanalytics/traceback
-- [ ] **npm** — Package is `@yavdaanalytics/traceback` (unscoped `traceback` is taken). Set repo secret `NPM_TOKEN` to an npm **granular access token** with:
-  - Permission: **Read and write** for packages (or publish on `@yavdaanalytics`)
-  - **Bypass two-factor authentication** enabled (required for first CI `npm publish`; prefer [trusted publishing](https://docs.npmjs.com/trusted-publishers) after `0.1.0` exists)
-  - Then tag `v*` to trigger [`.github/workflows/release-tag.yml`](../.github/workflows/release-tag.yml). `prepublishOnly` warms fastembed, then runs `build` + serialized `test` before every `npm publish`.
-  - After first publish: configure Trusted Publisher → GitHub Actions (`yavdaanalytics` / `traceback` / `release-tag.yml`), then revoke the bypass-2FA token when ready.
-- [ ] **Verify publish** — `npm run release:ensure-published` (add `--wait` after CI). Exit 1 means the version is not on the registry yet.
+- [x] **npm** — `@yavdaanalytics/traceback@0.1.0` published: https://www.npmjs.com/package/@yavdaanalytics/traceback
+- [x] **Verify publish** — `npm run release:ensure-published` returns `ok: true`.
+- [ ] **Trusted publishing** — On the npm package → Trusted Publisher → GitHub Actions:
+  - Org/user: `yavdaanalytics`
+  - Repo: `traceback`
+  - Workflow: `release-tag.yml`
+  - Allowed action: **Allow npm publish**
+  - CI Node is **22.14.0+** (required for OIDC). After a successful Actions publish, optionally set Publishing access to disallow tokens and revoke the bypass-2FA `NPM_TOKEN`.
+- [x] **GitHub Release** — https://github.com/yavdaanalytics/traceback/releases/tag/v0.1.0 (plugin zips attached)
+- [x] **npm package contents** — `package.json` `files` allowlist ships `dist`, `SKILL.md`, `SETUP.md`, and license/docs (not the full test tree).
 
-### If release CI fails before publish (package 404)
-
-The tag workflow never reached a successful `npm publish`. Fix programmatically:
+### Future releases
 
 ```sh
-# 1. Confirm missing + classify
-npm run release:ensure-published
-
-# 2. If CI failed on tests: land the fix, then retarget the same semver tag
-git push origin main
-git tag -f "v$(node -p "require('./package.json').version")" HEAD
-git push origin ":refs/tags/v$(node -p "require('./package.json').version")"
+# bump package.json version, then:
+git tag "v$(node -p "require('./package.json').version")"
 git push origin "v$(node -p "require('./package.json').version")"
-
-# 3. If CI failed on publish with E403 / "bypass 2fa":
-#    create a granular npm token with bypass-2FA, then:
-gh secret set NPM_TOKEN -R yavdaanalytics/traceback < token.txt
-gh workflow run release-tag.yml --ref "v$(node -p "require('./package.json').version")"
-
-# 4. Re-check:
 npm run release:ensure-published -- --wait
 ```
-
-Do **not** bump the package version solely because a tag publish failed — move the existing `v*` tag to the fixed SHA (or re-run the workflow on that tag) instead.
 
 ## After clone (maintainers)
 
