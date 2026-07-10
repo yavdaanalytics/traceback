@@ -21,7 +21,9 @@ CI: [`.github/workflows/release-tag.yml`](../../../.github/workflows/release-tag
 - Tag must be `v` + exact `package.json` version (CI fails otherwise).
 - Prefer the tag-triggered CI path over local `npm publish`.
 - Publish via **OIDC trusted publishing** (no interactive 2FA / security-key prompt in CI).
-- Claude/Cursor **marketplace listing** is manual after the GitHub Release exists — CI only attaches plugin zips.
+- Claude/Cursor **marketplace listing** is via the private
+  [yavda-marketplace](https://github.com/yavdaanalytics/yavda-marketplace) catalog
+  (see [marketplace.md](marketplace.md)) — CI only attaches plugin zips as artifacts.
 - If the release workflow itself changes, **bump a new patch version and tag** (do not re-run an old tag — `gh workflow run --ref vX.Y.Z` uses the workflow file *on that tag*).
 
 ## Progress checklist
@@ -200,13 +202,19 @@ Expect:
 
 Do **not** casually run `npm run release:publish` from a laptop unless the user explicitly wants a manual publish and understands it can race CI.
 
-## Step 8 — Marketplace handoff
+## Step 8 — Marketplace handoff (yavda-marketplace)
 
-CI does **not** submit to Claude or Cursor marketplaces. After the GitHub Release exists:
+Primary path: update the private org catalog
+**https://github.com/yavdaanalytics/yavda-marketplace** (not zip upload to a public store).
 
-1. Download both plugin zips from the release.
-2. Follow [marketplace.md](marketplace.md) for Claude Code and Cursor submission.
-3. Report back to the user with release URL, npm URL, and marketplace status (submitted / blocked / needs human login).
+1. After GitHub Release + npm succeed, follow [marketplace.md](marketplace.md):
+   - Claude: bump `traceback` in `.claude-plugin/marketplace.json` (`version` + `source.sha` → release commit).
+   - Cursor: copy `plugins/cursor-traceback/` → `yavda-marketplace/traceback/`, bump `.cursor-plugin/marketplace.json` `version`.
+2. Commit + push `yavda-marketplace` when the user asks to publish the catalog.
+3. Smoke-check: Claude `/plugin install traceback@yavda-tools` / Cursor refresh; then `traceback-setup --plugin --doctor`.
+4. Report release URL, npm URL, and marketplace status (catalog updated / deferred / needs push).
+
+Release zips remain secondary artifacts; see [marketplace.md](marketplace.md).
 
 ## Done criteria
 
@@ -217,8 +225,8 @@ Release is complete only when all of these are true (or marketplace explicitly d
 | OSS GitHub | `main` pushed; tag `vX.Y.Z` on origin |
 | npm | `release:ensure-published` ok |
 | GitHub Release | release exists with both plugin zips |
-| Claude marketplace | listing updated (or user deferred) |
-| Cursor marketplace | listing updated (or user deferred) |
+| Claude marketplace | `yavda-marketplace` Claude entry updated (or user deferred) |
+| Cursor marketplace | `yavda-marketplace` Cursor entry + vendored `traceback/` synced (or user deferred) |
 
 ## Quick command block (after version bump committed)
 
