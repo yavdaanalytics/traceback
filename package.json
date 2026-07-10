@@ -30,9 +30,11 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "start": "node dist/mcp/index.js",
-    "prepublishOnly": "npm run build && npm test",
+    "prepublishOnly": "npm run build && npm run release:warm-fastembed && npm test -- --maxWorkers=1",
     "release:sync-plugins": "node scripts/sync-plugin-versions.mjs",
     "release:verify-tag": "node scripts/verify-release-tag.mjs",
+    "release:warm-fastembed": "node scripts/warm-fastembed.mjs",
+    "release:ensure-published": "node scripts/ensure-npm-published.mjs",
     "test": "vitest run",
     "test:unit": "vitest run tests/unit",
     "test:integration": "vitest run tests/integration",

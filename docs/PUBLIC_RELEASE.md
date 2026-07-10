@@ -16,8 +16,28 @@ Manual steps before publishing this repository publicly under MIT license.
 ## Publishing
 
 - [ ] **GitHub** — Create or open public repo: https://github.com/yavdaanalytics/traceback
-- [ ] **npm** — Package is `@yavdaanalytics/traceback` (unscoped `traceback` is taken). Ensure `NPM_TOKEN` can publish to the `yavdaanalytics` org; tag `v*` to trigger [`.github/workflows/release-tag.yml`](../.github/workflows/release-tag.yml). `prepublishOnly` runs `build` + `test` before every `npm publish`.
-- [ ] **Plugin marketplaces** — Upload release zips (`claude-traceback-*.zip`, `cursor-traceback-*.zip`) from GitHub Releases to Cursor and Claude plugin distribution flows
+- [ ] **npm** — Package is `@yavdaanalytics/traceback` (unscoped `traceback` is taken). Ensure `NPM_TOKEN` can publish to the `yavdaanalytics` org; tag `v*` to trigger [`.github/workflows/release-tag.yml`](../.github/workflows/release-tag.yml). `prepublishOnly` warms fastembed, then runs `build` + serialized `test` before every `npm publish`.
+- [ ] **Verify publish** — `npm run release:ensure-published` (add `--wait` after CI). Exit 1 means the version is not on the registry yet.
+
+### If release CI fails before publish (package 404)
+
+The tag workflow never reached `npm publish`. Fix programmatically:
+
+```sh
+# 1. Confirm missing
+npm run release:ensure-published
+
+# 2. Land the CI fix on the default branch, then retarget the same semver tag
+git push origin main
+git tag -f "v$(node -p "require('./package.json').version")" HEAD
+git push origin ":refs/tags/v$(node -p "require('./package.json').version")"
+git push origin "v$(node -p "require('./package.json').version")"
+
+# 3. Wait for the release-tag run, then:
+npm run release:ensure-published -- --wait
+```
+
+Do **not** bump the package version solely because a tag publish failed — move the existing `v*` tag to the fixed SHA instead.
 
 ## After clone (maintainers)
 
