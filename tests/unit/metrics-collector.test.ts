@@ -89,6 +89,12 @@ describe("metrics collector", () => {
     expect(stats.trigger_decision_counts.weak).toBe(3);
     expect(stats.tools[0].tool_name).toBe("search_with_fallback");
     expect(stats.tools[0].token_reduction_pct).toBe(75);
+
+    const privacyResponse = await fetch(`${baseUrl}/privacy`);
+    expect(privacyResponse.status).toBe(200);
+    const privacyHtml = await privacyResponse.text();
+    expect(privacyHtml).toContain("Never collect");
+    expect(privacyHtml).toContain("traceback-telemetry disable");
   });
 
   it("upserts duplicate rollups idempotently", async () => {
