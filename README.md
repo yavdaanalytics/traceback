@@ -77,6 +77,7 @@ Dashboard: `traceback-dashboard` → `http://127.0.0.1:5555`
 | [`CONTRIBUTING.md`](CONTRIBUTING.md) | How to contribute (clone → PR) |
 | [`CODE_OF_CONDUCT.md`](CODE_OF_CONDUCT.md) | Community standards |
 | [`SECURITY.md`](SECURITY.md) | Vulnerability reporting |
+| [`docs/PRIVACY.md`](docs/PRIVACY.md) | Privacy summary (telemetry defaults) |
 | [`SUPPORT.md`](SUPPORT.md) | Where to ask for help |
 | [`CLAUDE.md`](CLAUDE.md) | Contributor stack, conventions, testing |
 | [`AGENTS.md`](AGENTS.md) | Short pointer for coding agents |

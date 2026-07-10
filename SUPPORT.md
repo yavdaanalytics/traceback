@@ -8,6 +8,7 @@
 | Bug reports | [Issues](https://github.com/yavdaanalytics/traceback/issues/new?template=bug_report.yml) |
 | Feature requests | [Issues](https://github.com/yavdaanalytics/traceback/issues/new?template=feature_request.yml) |
 | Security vulnerability | [`SECURITY.md`](SECURITY.md) (private reporting) |
+| Privacy / telemetry | [`docs/PRIVACY.md`](docs/PRIVACY.md), [`docs/TELEMETRY.md`](docs/TELEMETRY.md), https://traceback.yavda.com/privacy |
 | Install / hooks / doctor | [`SETUP.md`](SETUP.md) |
 | MCP tools | [`docs/API.md`](docs/API.md) |
 

@@ -76,7 +76,49 @@ function renderPublicPage(statsJson: string): string {
     <thead><tr><th>Tool</th><th>Invocations</th><th>Failures</th><th>Line Reduction</th><th>p50 ms</th><th>p95 ms</th></tr></thead>
     <tbody>${toolRows || "<tr><td colspan='6'>No data yet</td></tr>"}</tbody>
   </table>
-  <p class="subtitle">Updated: ${escapeHtml(stats.updated_at)}</p>
+  <p class="subtitle">Updated: ${escapeHtml(stats.updated_at)} · <a href="/privacy" style="color:#60a5fa">Privacy</a> · <a href="https://github.com/yavdaanalytics/traceback" style="color:#60a5fa">GitHub</a></p>
+</body>
+</html>`;
+}
+
+function renderPrivacyPage(): string {
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>traceback Privacy</title>
+  <style>
+    body { font-family: system-ui, sans-serif; margin: 2rem auto; max-width: 42rem; background: #0f172a; color: #e2e8f0; line-height: 1.5; }
+    h1 { margin-bottom: 0.25rem; }
+    .subtitle, li { color: #94a3b8; }
+    a { color: #60a5fa; }
+    ul { padding-left: 1.25rem; }
+    .card { background: #1e293b; border: 1px solid #334155; border-radius: 0.75rem; padding: 1rem 1.25rem; margin: 1rem 0; }
+  </style>
+</head>
+<body>
+  <p><a href="/">← Metrics</a></p>
+  <h1>Privacy</h1>
+  <p class="subtitle">Anonymous aggregate telemetry only. No transcripts, prompts, or file paths.</p>
+  <div class="card">
+    <p><strong>Defaults</strong></p>
+    <ul>
+      <li>Plain <code>traceback-setup</code>: sharing OFF</li>
+      <li>Plugin <code>traceback-setup --plugin</code>: sharing ON with disclosure; press <code>n</code> to opt out</li>
+    </ul>
+  </div>
+  <div class="card">
+    <p><strong>When opted in, we collect</strong></p>
+    <ul>
+      <li>Anonymous install id and hashed repo id</li>
+      <li>Tool counts, latency percentiles, warm-start savings</li>
+      <li>Package version</li>
+    </ul>
+    <p><strong>We never collect</strong> queries, paths, commits, transcripts, email, or hostname.</p>
+  </div>
+  <p>Opt out anytime: <code>traceback-telemetry disable</code></p>
+  <p>Full policy: <a href="https://github.com/yavdaanalytics/traceback/blob/main/docs/TELEMETRY.md">docs/TELEMETRY.md</a> · <a href="https://github.com/yavdaanalytics/traceback/blob/main/docs/PRIVACY.md">docs/PRIVACY.md</a></p>
 </body>
 </html>`;
 }
@@ -194,6 +236,12 @@ export function createMetricsCollectorServer(dbPath: string): http.Server {
         const stats = buildPublicStats(dbPath);
         res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
         res.end(renderPublicPage(JSON.stringify(stats)));
+        return;
+      }
+
+      if (req.method === "GET" && pathname === "/privacy") {
+        res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
+        res.end(renderPrivacyPage());
         return;
       }
 

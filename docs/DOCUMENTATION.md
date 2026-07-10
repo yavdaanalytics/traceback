@@ -9,7 +9,7 @@ This repo uses a **three-tier doc model**. Follow it when adding or editing user
 | **Front door** | `README.md` | New users, GitHub visitors | What traceback is, why it matters, 5-minute quick start, funnel overview, privacy defaults, doc map |
 | **Task guides** | `SETUP.md`, `SKILL.md`, `docs/TELEMETRY.md`, `docs/API.md`, `docs/ARCHITECTURE.md` | Users and integrators | Install, agent contract, telemetry, tool reference, deep architecture |
 | **Contributor** | `CLAUDE.md`, `AGENTS.md`, `docs/DEV.md`, `CONTRIBUTING.md` | Maintainers and coding agents | Stack, conventions, tests, security, bench SLAs, PR process |
-| **Community** | `CODE_OF_CONDUCT.md`, `SECURITY.md`, `SUPPORT.md`, `.github/ISSUE_TEMPLATE/`, `.github/PULL_REQUEST_TEMPLATE.md` | Users and reporters | Conduct, vulnerability reporting, support routing, issue/PR forms |
+| **Community** | `CODE_OF_CONDUCT.md`, `SECURITY.md`, `SUPPORT.md`, `docs/PRIVACY.md`, `.github/ISSUE_TEMPLATE/`, `.github/PULL_REQUEST_TEMPLATE.md` | Users and reporters | Conduct, vulnerability reporting, privacy summary, support routing, issue/PR forms |
 
 ## README rules (strict)
 
