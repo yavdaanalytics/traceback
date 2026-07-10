@@ -1,6 +1,6 @@
 import type { SessionRef } from "../adapters/types.js";
 import type { IndexConfig } from "../ingest/indexer.js";
-import { writeJsonArchive } from "./index.js";
+import { copyToArchive, writeJsonArchive } from "./index.js";
 
 export function archiveCursorSession(
   config: IndexConfig,
@@ -9,6 +9,10 @@ export function archiveCursorSession(
   sourceKey: string,
 ): void {
   if (!ref.transcriptPath) return;
+  if (ref.transcriptPath.endsWith(".jsonl")) {
+    copyToArchive(config, "cursor", sourceKey, ref.transcriptPath, "change-detected");
+    return;
+  }
   writeJsonArchive(
     config,
     "cursor",

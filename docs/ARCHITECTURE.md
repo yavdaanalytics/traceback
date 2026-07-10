@@ -67,7 +67,20 @@ Scoped grep on L1/L2 files. If empty: widen to all L2 commit files, then **full-
 │ Session transcript       │  Claude Code, Cursor, or Copilot adapters
 │ (JSON/JSONL)             │  (+ optional copy under data/archive/)
 └──────────┬───────────────┘
-           │ post-commit hook / ingest_session
+           │ post-commit hook / traceback-ingest / ingest_session
+```
+
+**Adapter sources (each IDE may use one or both layouts):**
+
+| Adapter | Paths |
+|---------|--------|
+| `claude-code` | `~/.claude/projects/**/*.jsonl` |
+| `cursor` | `%APPDATA%/Cursor/User/workspaceStorage` (vscdb) **and** `~/.cursor/projects/**/agent-transcripts/*.jsonl` |
+| `copilot` | `%APPDATA%/Code/User/.../chatSessions` **and** `~/.copilot/session-state/**/events.jsonl` |
+
+Override roots with `TRACEBACK_*` env vars — see [`SETUP.md`](../SETUP.md) §6.
+
+```
     ┌──────▼────────────────────────┐
     │ LanceDB (vectors)               │
     │ - turn_embeddings (sessions)    │

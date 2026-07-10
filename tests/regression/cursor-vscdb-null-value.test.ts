@@ -14,6 +14,7 @@ import {
 describe("regression: cursor vscdb NULL value (2026-07-07)", () => {
   let storageRoot: string;
   const savedCursorStorage = process.env.TRACEBACK_CURSOR_STORAGE;
+  const savedCursorProjects = process.env.TRACEBACK_CURSOR_PROJECTS_DIR;
 
   beforeAll(() => {
     storageRoot = mkdtempSync(join(tmpdir(), "traceback-cursor-null-reg-"));
@@ -26,11 +27,14 @@ describe("regression: cursor vscdb NULL value (2026-07-07)", () => {
     );
     buildCursorFixtureVscdbNullValue(wsDir, "composer.composerData");
     process.env.TRACEBACK_CURSOR_STORAGE = storageRoot;
+    process.env.TRACEBACK_CURSOR_PROJECTS_DIR = join(storageRoot, "no-cursor-projects");
   });
 
   afterAll(() => {
     if (savedCursorStorage === undefined) delete process.env.TRACEBACK_CURSOR_STORAGE;
     else process.env.TRACEBACK_CURSOR_STORAGE = savedCursorStorage;
+    if (savedCursorProjects === undefined) delete process.env.TRACEBACK_CURSOR_PROJECTS_DIR;
+    else process.env.TRACEBACK_CURSOR_PROJECTS_DIR = savedCursorProjects;
     try {
       rmSync(storageRoot, { recursive: true, force: true });
     } catch {

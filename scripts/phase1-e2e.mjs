@@ -11,9 +11,9 @@ import { existsSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { execFileSync } from "node:child_process";
-import { ingestStaleSessions, defaultDataDir, defaultSqlitePath } from "../dist/ingest/indexer.js";
 import { findSimilarSessionsWithContext } from "../dist/mcp/recall.js";
 import { resolveConfig } from "../dist/config.js";
+import { runIngest } from "../dist/cli/ingest.js";
 import { normalizePath } from "../dist/util/paths.js";
 
 function parseArgs(argv) {
@@ -52,15 +52,7 @@ async function main() {
 
   console.log(`Phase 1 E2E — repo=${repoPath} query="${query}"`);
 
-  const ingest = await ingestStaleSessions(
-    {
-      dataDir: config.dataDir,
-      sqlitePath: config.sqlitePath,
-      repoPath,
-      sessionGapMs: config.sessionGapMs,
-    },
-    { projectPath: normalizedRepo },
-  );
+  const ingest = await runIngest({ repoPath });
   console.log(`Ingested ${ingest.ingested} session(s), skipped ${ingest.skipped}`);
 
   const results = await findSimilarSessionsWithContext(
