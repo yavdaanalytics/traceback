@@ -38,8 +38,7 @@ jobs:
         run: npm run build
 
       - name: Warm fastembed model cache
-        run: |
-          node --input-type=module -e "import { FlagEmbedding, EmbeddingModel } from 'fastembed'; await FlagEmbedding.init({ model: EmbeddingModel.AllMiniLML6V2 }); console.log('fastembed ready');"
+        run: node scripts/warm-fastembed.mjs
 
       - name: Test
         run: npm test -- --maxWorkers=1
@@ -62,6 +61,9 @@ jobs:
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: npm publish --provenance --access public
+
+      - name: Verify package on npm registry
+        run: npm run release:ensure-published -- --wait --timeout-ms 120000
 
       - name: Create GitHub release with plugin artifacts
         uses: softprops/action-gh-release@v2
