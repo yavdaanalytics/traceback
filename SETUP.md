@@ -31,7 +31,27 @@ When prompted `Enable traceback for ALL repositories on this machine? [Y/n]`, ac
 - **Global git excludes** — `core.excludesFile` patterns for `/data/traceback.db`, `/data/lancedb/`, `/.traceback/` (no `.gitignore` pollution)
 - **Skills** — `SKILL.md` synced to `~/.cursor/skills/traceback` and `~/.claude/skills/traceback`
 
-Non-interactive: `TRACEBACK_SETUP_ALL_REPOS=true traceback-setup` or `--yes-all-repos` / `--no-all-repos`.
+### Host Skills (Global Installation Only)
+
+SKILL.md provides host-first routing metadata (deciding when to invoke traceback MCP). 
+It is installed **globally** during `traceback-setup` and is available to **all repositories** on the machine.
+
+**Global locations (after `traceback-setup`):**
+- `~/.claude/skills/traceback/SKILL.md` — Claude Code host skill gate
+- `~/.cursor/skills/traceback/SKILL.md` — Cursor IDE host skill gate
+
+**Per-repo setup (`--repo-only`) does NOT install skills** — they are already available globally. Skills are per-machine, not per-repository.
+
+To refresh skills after updating traceback:
+```sh
+# Full global re-setup:
+traceback-setup --yes-all-repos
+
+# Or verify existing installation:
+traceback-setup --doctor
+```
+
+Non-interactive global setup: `TRACEBACK_SETUP_ALL_REPOS=true traceback-setup` or `--yes-all-repos` / `--no-all-repos`.
 
 Verify: `traceback-setup --doctor`
 
@@ -48,6 +68,8 @@ This installs:
 - **Per-IDE warm-start hooks** — project `.cursor/hooks.json`, `.github/hooks/`, `.windsurf/` when those configs exist
 - **Local excludes** — `.git/info/exclude` by default (or `--use-gitignore` / `--exclude-mode=gitignore`)
 - **CLAUDE.md onboarding** — creates or updates a marked `## Traceback debugging` section (idempotent; skip with `--skip-claude-md`)
+
+**NOTE:** Skills are **NOT** installed per-repo. Host skills (SKILL.md) are installed globally during the initial `traceback-setup` and are available to all repositories on the machine.
 
 Refresh onboarding only: `traceback-setup --claude-md-only`
 

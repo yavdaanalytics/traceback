@@ -103,13 +103,11 @@ export function installTracebackSkills(repoRoot: string, packageDistDir: string 
   const source = readFileSync(sourcePath, "utf-8");
   const content = source.includes(SKILL_MARKER) ? source : `${source.trimEnd()}\n\n${SKILL_MARKER}\n`;
 
-  const projectCursorDir = process.env.TRACEBACK_CURSOR_PROJECT_SKILLS_DIR?.trim() || join(repoRoot, ".cursor", "skills");
   const globalCursorDir = process.env.TRACEBACK_CURSOR_SKILLS_DIR?.trim() || join(homedir(), ".cursor", "skills");
   const claudeDir = process.env.TRACEBACK_CLAUDE_SKILLS_DIR?.trim() || join(homedir(), ".claude", "skills");
   const targets = [
-    { label: "Cursor project", path: join(projectCursorDir, "traceback", SKILL_FILE_NAME) },
     { label: "Cursor global", path: join(globalCursorDir, "traceback", SKILL_FILE_NAME) },
-    { label: "Claude Code", path: join(claudeDir, "traceback", SKILL_FILE_NAME) },
+    { label: "Claude Code global", path: join(claudeDir, "traceback", SKILL_FILE_NAME) },
   ];
 
   for (const target of targets) {

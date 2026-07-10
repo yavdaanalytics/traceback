@@ -19,8 +19,18 @@ These snapshots demonstrate traceback's value with **real queries on real repos*
 - **Repo:** Private multi-tenant SaaS with Azure CIAM auth, Power BI embedding (~100K LOC)
 - **Query:** "CIAM authentication tenant isolation"
 - **Finding:** 10,542 blind grep matches → 107 scoped results (99% noise reduction, ~300K token savings)
+- **Measurement type:** Search results noise reduction
 - **Fixture:** [`fixtures/powerbi-ciam-proof/invocation-1.json`](../fixtures/powerbi-ciam-proof/invocation-1.json) (redacted telemetry)
 - **Re-run:** `npm run build && npm run proof:powerbi` (local checkout required; repo is not public)
+
+### `powerbi-embedded-analytics-debugging-session.md`
+
+- **Repo:** Same multi-tenant SaaS (c:/source/powerbi-embedded-analytics)
+- **Scenario:** Prod CIAM test failure debugging + 3 auth fixes validation
+- **Finding:** 22,500 tokens (without traceback) → 8,500 tokens (with traceback) = **62% reduction**
+- **Measurement type:** Agent session efficiency (file reads + agent spawns vs traceback MCP calls)
+- **Key insight:** Agent spawns are the biggest token sink (~10K); traceback replaces them with cheap MCP calls
+- **Applicability:** Any debugging session involving repeating patterns (auth, config, test failures)
 
 ## How to Generate Your Own
 
