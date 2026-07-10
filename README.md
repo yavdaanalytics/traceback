@@ -47,7 +47,11 @@ Deep dive: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
 - **Recall** — semantic match finds "token expiry" when you said "jwt timeout".
 - **Tokens** — fewer noisy grep hits means the agent can read all matches.
 
-**Real-world proof (private production repo):** query *"CIAM authentication tenant isolation"* — blind `git grep` returned **10,542 lines** (~300K tokens); traceback scoped warm-start returned **107 lines** (~3.2K tokens), **99% noise cut** on a cold start (no indexed sessions). Write-up: [`actual_codebase_measures/powerbi-embedded-analytics-ciam-search.md`](actual_codebase_measures/powerbi-embedded-analytics-ciam-search.md). Redacted telemetry: [`fixtures/powerbi-ciam-proof/invocation-1.json`](fixtures/powerbi-ciam-proof/invocation-1.json). Re-run locally: `npm run build && npm run proof:powerbi` (needs a local checkout; `--repo` or `TRACEBACK_PROOF_REPO`).
+**Real-world proof (private production repo):**
+
+1. **Search efficiency:** Query *"CIAM authentication tenant isolation"* — blind `git grep` returned **10,542 lines** (~300K tokens); traceback scoped warm-start returned **107 lines** (~3.2K tokens), **99% noise cut** on cold start (no indexed sessions). Write-up: [`actual_codebase_measures/powerbi-embedded-analytics-ciam-search.md`](actual_codebase_measures/powerbi-embedded-analytics-ciam-search.md). Redacted telemetry: [`fixtures/powerbi-ciam-proof/invocation-1.json`](fixtures/powerbi-ciam-proof/invocation-1.json). Re-run locally: `npm run build && npm run proof:powerbi` (needs a local checkout; `--repo` or `TRACEBACK_PROOF_REPO`).
+
+2. **Agent session efficiency:** A real debugging session (CIAM test failure + auth fixes) consumed **22,500 tokens** without traceback (manual file reads + agent spawn), but only **8,500 tokens** with traceback (MCP calls + prior session recall) — **62% reduction**. Larger impact: eliminated costliest operation (agent spawn at ~10K tokens). Write-up: [`actual_codebase_measures/powerbi-embedded-analytics-debugging-session.md`](actual_codebase_measures/powerbi-embedded-analytics-debugging-session.md).
 
 Embeddings run **locally** (`fastembed`, no LLM API). LanceDB + SQLite + git — no database server.
 
