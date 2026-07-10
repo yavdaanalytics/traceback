@@ -19,11 +19,12 @@ CI: [`.github/workflows/release-tag.yml`](../../../.github/workflows/release-tag
 - Do **not** push `main`, tags, or remotes unless the user explicitly asks to publish/push.
 - Do **not** force-push, amend published history, or skip hooks.
 - Tag must be `v` + exact `package.json` version (CI fails otherwise).
+- **Single release version:** `package.json` (npm), `plugins/claude-traceback/.claude-plugin/plugin.json`, and `plugins/cursor-traceback/.cursor-plugin/plugin.json` must all equal the same semver. Never ship if they diverge. Enforce with `npm run release:verify-versions` after sync and before tagging.
 - Prefer the tag-triggered CI path over local `npm publish`.
 - Publish via **OIDC trusted publishing** (no interactive 2FA / security-key prompt in CI).
 - Claude/Cursor **marketplace listing** is via the private
   [yavda-marketplace](https://github.com/yavdaanalytics/yavda-marketplace) catalog
-  (see [marketplace.md](marketplace.md)) — CI only attaches plugin zips as artifacts.
+  (see [marketplace.md](marketplace.md)) — CI only attaches plugin zips as artifacts. Catalog `traceback` entries must use that **same** version.
 - If the release workflow itself changes, **bump a new patch version and tag** (do not re-run an old tag — `gh workflow run --ref vX.Y.Z` uses the workflow file *on that tag*).
 
 ## Progress checklist
@@ -35,12 +36,13 @@ Release Progress:
 - [ ] 0. Confirm intent + version bump type
 - [ ] 1. Preflight (clean tree, on main, tests)
 - [ ] 2. Bump package.json version + sync plugins
+- [ ] 2b. Verify versions match (npm = Claude = Cursor)
 - [ ] 3. Commit version/plugin sync (+ workflow fixes if any)
 - [ ] 4. Push main to origin (OSS)
 - [ ] 5. Create and push v* tag
 - [ ] 6. Wait for release-tag workflow (release job must succeed)
-- [ ] 7. Verify npm + GitHub Release artifacts
-- [ ] 8. Marketplace handoff (Claude + Cursor)
+- [ ] 7. Verify npm + GitHub Release artifacts (same version)
+- [ ] 8. Marketplace handoff (Claude + Cursor at same version)
 ```
 
 ## Step 0 — Confirm intent
@@ -77,19 +79,29 @@ If uncommitted feature work remains, stop and get it merged before releasing.
 
 ## Step 2 — Version + plugin sync
 
+`package.json` `"version"` is the **only** source of truth. Claude and Cursor plugin
+manifests must be synced to it before commit/tag.
+
 1. Bump `"version"` in `package.json` **and** the root/`packages[""]` entries in `package-lock.json`.
-2. Sync plugin shells from portable setup assets:
+2. Sync plugin shells from portable setup assets, then **verify parity**:
 
 ```sh
 npm run build
 npm run release:sync-plugins
+npm run release:verify-versions
 ```
 
-This updates:
+`release:verify-versions` fails unless all three match:
 
-- `plugins/claude-traceback/.claude-plugin/plugin.json` version + assets
-- `plugins/cursor-traceback/.cursor-plugin/plugin.json` version + assets
-- skills / hooks / mcp / Cursor rule copies under `plugins/*`
+| Place | Path |
+|-------|------|
+| npm | `package.json` → `version` |
+| Claude plugin | `plugins/claude-traceback/.claude-plugin/plugin.json` → `version` |
+| Cursor plugin | `plugins/cursor-traceback/.cursor-plugin/plugin.json` → `version` |
+
+Sync also refreshes skills / hooks / mcp / Cursor rule copies under `plugins/*`.
+
+**Stop the release** if verify fails — do not tag or push until versions align.
 
 ## Step 3 — Commit
 
@@ -195,10 +207,12 @@ npm view @yavdaanalytics/traceback version
 Expect:
 
 - npm: `@yavdaanalytics/traceback@X.Y.Z` present
+- Local/plugin parity still holds: `npm run release:verify-versions`
 - GitHub Release files:
   - `claude-traceback-vX.Y.Z.zip`
   - `cursor-traceback-vX.Y.Z.zip`
   - `checksums.txt`
+- Zip names and marketplace catalog entries use the **same** `X.Y.Z`
 
 Do **not** casually run `npm run release:publish` from a laptop unless the user explicitly wants a manual publish and understands it can race CI.
 
@@ -207,12 +221,16 @@ Do **not** casually run `npm run release:publish` from a laptop unless the user 
 Primary path: update the private org catalog
 **https://github.com/yavdaanalytics/yavda-marketplace** (not zip upload to a public store).
 
+**Version rule:** Claude and Cursor catalog `traceback` entries must use the **same**
+`$VER` as npm / in-repo plugin manifests. Never publish marketplace at an older version
+while npm is ahead.
+
 1. After GitHub Release + npm succeed, follow [marketplace.md](marketplace.md):
-   - Claude: bump `traceback` in `.claude-plugin/marketplace.json` (`version` + `source.sha` → release commit).
-   - Cursor: copy `plugins/cursor-traceback/` → `yavda-marketplace/traceback/`, bump `.cursor-plugin/marketplace.json` `version`.
+   - Claude: bump `traceback` in `.claude-plugin/marketplace.json` (`version` + `source.sha` → release commit) to `$VER`.
+   - Cursor: copy `plugins/cursor-traceback/` → `yavda-marketplace/traceback/`, bump `.cursor-plugin/marketplace.json` `version` to `$VER`.
 2. Commit + push `yavda-marketplace` when the user asks to publish the catalog.
 3. Smoke-check: Claude `/plugin install traceback@yavda-tools` / Cursor refresh; then `traceback-setup --plugin --doctor`.
-4. Report release URL, npm URL, and marketplace status (catalog updated / deferred / needs push).
+4. Report release URL, npm URL, and marketplace status (catalog updated / deferred / needs push). Confirm reported versions are identical across npm, Claude, and Cursor.
 
 Release zips remain secondary artifacts; see [marketplace.md](marketplace.md).
 
@@ -223,10 +241,11 @@ Release is complete only when all of these are true (or marketplace explicitly d
 | Channel | Done when |
 |---------|-----------|
 | OSS GitHub | `main` pushed; tag `vX.Y.Z` on origin |
-| npm | `release:ensure-published` ok |
-| GitHub Release | release exists with both plugin zips |
-| Claude marketplace | `yavda-marketplace` Claude entry updated (or user deferred) |
-| Cursor marketplace | `yavda-marketplace` Cursor entry + vendored `traceback/` synced (or user deferred) |
+| npm | `release:ensure-published` ok for `X.Y.Z` |
+| Version parity | `release:verify-versions` ok (npm = Claude plugin = Cursor plugin = `X.Y.Z`) |
+| GitHub Release | release exists with both plugin zips named `*-vX.Y.Z.zip` |
+| Claude marketplace | `yavda-marketplace` Claude entry at `X.Y.Z` (or user deferred) |
+| Cursor marketplace | `yavda-marketplace` Cursor entry + vendored `traceback/` at `X.Y.Z` (or user deferred) |
 
 ## Quick command block (after version bump committed)
 
@@ -236,5 +255,6 @@ git tag "v$(node -p "require('./package.json').version")"
 git push origin "v$(node -p "require('./package.json').version")"
 gh run watch
 npm run release:ensure-published -- --wait
+npm run release:verify-versions
 gh release view "v$(node -p "require('./package.json').version")"
 ```

@@ -56,6 +56,20 @@ function readPluginMcp(path: string) {
 }
 
 describe("plugin packages", () => {
+  it("keeps npm package version identical to Claude and Cursor plugin manifests", () => {
+    const pkg = JSON.parse(readFileSync(join(repoRoot, "package.json"), "utf-8")) as {
+      version: string;
+    };
+    expect(pkg.version).toMatch(/^\d+\.\d+\.\d+/);
+
+    for (const plugin of pluginPackages) {
+      const manifest = JSON.parse(readFileSync(plugin.manifestPath, "utf-8")) as {
+        version?: string;
+      };
+      expect(manifest.version, `${plugin.name} version`).toBe(pkg.version);
+    }
+  });
+
   it("bundle host-first SKILL.md synced from repo root", () => {
     const rootSkill = normalize(readFileSync(rootSkillPath, "utf-8"));
     expect(rootSkill).toContain("routing_mode: balanced_host_first");

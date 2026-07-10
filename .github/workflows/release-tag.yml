@@ -53,6 +53,9 @@ jobs:
       - name: Sync plugin manifest versions
         run: npm run release:sync-plugins
 
+      - name: Verify npm and plugin versions match
+        run: npm run release:verify-versions
+
       - name: Package plugin folders
         run: |
           mkdir -p dist/plugins

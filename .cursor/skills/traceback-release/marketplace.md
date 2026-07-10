@@ -1,5 +1,9 @@
 # Marketplace handoff (yavda-marketplace)
 
+**Version lock:** npm (`@yavdaanalytics/traceback`), in-repo Claude plugin, in-repo Cursor
+plugin, and both `yavda-marketplace` traceback entries must all share one semver `$VER`.
+Do not update only one host.
+
 After `release-tag.yml` succeeds (npm + GitHub Release), publish host plugins by
 updating the private org catalog:
 
@@ -144,6 +148,7 @@ Claude/Cursor publish path when `yavda-marketplace` is available.
 - Cursor requires a **file sync** into `yavda-marketplace/traceback/`; updating
   JSON alone is not enough.
 - Keep Claude and Cursor traceback `version` fields identical to
-  `@yavdaanalytics/traceback` / plugin manifests.
+  `@yavdaanalytics/traceback` / in-repo plugin manifests (`npm run release:verify-versions`
+  in the traceback repo before tagging; marketplace bump must use that same `$VER`).
 - Official Anthropic/Cursor *public* store UIs are out of scope unless the user
   explicitly asks; default to this org marketplace.
