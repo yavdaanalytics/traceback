@@ -59,9 +59,9 @@
     "security:audit": "npm audit"
   },
   "dependencies": {
-    "@lancedb/lancedb": "^0.13.0",
+    "@lancedb/lancedb": "^0.31.0",
     "@modelcontextprotocol/sdk": "^1.0.4",
-    "fastembed": "^1.14.1",
+    "fastembed": "^2.1.0",
     "zod": "^4.0.0"
   },
   "devDependencies": {
