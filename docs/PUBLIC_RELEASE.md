@@ -12,6 +12,7 @@ Manual steps before publishing this repository publicly under MIT license.
 
 - [ ] **Collector live** — Ensure `https://traceback.yavda.com` serves `traceback-metrics` before plugin default endpoint ships. See [`deploy/README.md`](../deploy/README.md) for self-host instructions.
 - [ ] **Privacy review** — Plugin installs default sharing ON with disclosure; confirm this meets your jurisdiction.
+- [x] **GitHub Security** — `SECURITY.md`, private vulnerability reporting, secret scanning (+ push protection), Dependabot alerts/security updates, CodeQL workflow, `.github/dependabot.yml`. Skip “Code quality findings” unless you want the extra noise.
 
 ## Publishing
 
