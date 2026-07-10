@@ -11,15 +11,43 @@ export function encodeClaudeProjectDir(projectPath: string): string {
     .replace(/\//g, "-");
 }
 
-/** Claude Code encodes project paths as e.g. `c--source-traceback`. */
+function resolveUnixAbsoluteFromTokens(tokens: string[]): string | undefined {
+  const n = tokens.length;
+
+  function dfs(index: number, segments: string[]): string | undefined {
+    if (index === n) {
+      const candidate = segments.length === 0 ? "/" : `/${segments.join("/")}`;
+      return existsSync(candidate) ? candidate : undefined;
+    }
+    for (let end = index + 1; end <= n; end++) {
+      const segment = tokens.slice(index, end).join("-");
+      const found = dfs(end, [...segments, segment]);
+      if (found) return found;
+    }
+    return undefined;
+  }
+
+  return dfs(0, []);
+}
+
+/** Claude Code encodes project paths as e.g. `c--source-traceback` (Windows) or `-tmp-project` (Unix). */
 export function decodeClaudeProjectDir(dirName: string): string {
   const match = /^([a-zA-Z])--(.+)$/.exec(dirName);
-  if (!match) return dirName;
-  const drive = match[1].toLowerCase();
-  const tokens = match[2].split("-");
-  const resolved = resolvePathFromEncodedTokens(drive, tokens);
-  if (resolved) return resolved;
-  return osPathFromSegments(drive, tokens);
+  if (match) {
+    const drive = match[1].toLowerCase();
+    const tokens = match[2].split("-");
+    const resolved = resolvePathFromEncodedTokens(drive, tokens);
+    if (resolved) return resolved;
+    return osPathFromSegments(drive, tokens);
+  }
+  // Unix absolute paths encode leading `/` as a leading `-`.
+  if (dirName.startsWith("-") && dirName.length > 1) {
+    const tokens = dirName.slice(1).split("-");
+    const resolved = resolveUnixAbsoluteFromTokens(tokens);
+    if (resolved) return resolved;
+    return `/${tokens.join("/")}`;
+  }
+  return dirName;
 }
 
 export function claudeProjectsDir(): string {
@@ -67,12 +95,21 @@ function resolvePathFromEncodedTokens(drive: string, tokens: string[]): string |
 /** Decode Cursor project folder name back to a filesystem path. */
 export function decodeCursorProjectDir(dirName: string): string {
   const match = /^([a-zA-Z])-(.+)$/.exec(dirName);
-  if (!match) return dirName;
-  const drive = match[1].toLowerCase();
-  const tokens = match[2].split("-");
-  const resolved = resolvePathFromEncodedTokens(drive, tokens);
-  if (resolved) return resolved;
-  return osPathFromSegments(drive, tokens);
+  if (match) {
+    const drive = match[1].toLowerCase();
+    const tokens = match[2].split("-");
+    const resolved = resolvePathFromEncodedTokens(drive, tokens);
+    if (resolved) return resolved;
+    return osPathFromSegments(drive, tokens);
+  }
+  // Unix absolute paths encode leading `/` as a leading `-`.
+  if (dirName.startsWith("-") && dirName.length > 1) {
+    const tokens = dirName.slice(1).split("-");
+    const resolved = resolveUnixAbsoluteFromTokens(tokens);
+    if (resolved) return resolved;
+    return `/${tokens.join("/")}`;
+  }
+  return dirName;
 }
 
 export function cursorProjectsDir(): string {
