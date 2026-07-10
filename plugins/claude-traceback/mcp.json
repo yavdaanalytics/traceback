@@ -2,7 +2,10 @@
   "mcpServers": {
     "traceback": {
       "command": "npx",
-      "args": ["-y", "traceback"],
+      "args": [
+        "-y",
+        "traceback"
+      ],
       "env": {
         "TRACEBACK_MCP_SERVER_ID": "traceback",
         "TRACEBACK_MCP_CONFIG_KEY": "traceback",

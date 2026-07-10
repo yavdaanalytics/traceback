@@ -1,6 +1,11 @@
 #!/usr/bin/env node
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+/**
+ * Sync plugin package shells from setup.ts portable assets.
+ * Requires `npm run build` first (imports from dist/).
+ */
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
+import { pathToFileURL } from "node:url";
 
 function readJson(path) {
   return JSON.parse(readFileSync(path, "utf-8"));
@@ -28,6 +33,19 @@ function copySkill(repoRoot, pluginRoot) {
 }
 
 const repoRoot = process.cwd();
+const distSetup = resolve(repoRoot, "dist", "cli", "setup.js");
+if (!existsSync(distSetup)) {
+  throw new Error("dist/cli/setup.js missing — run `npm run build` before release:sync-plugins");
+}
+
+const {
+  renderTracebackCursorRule,
+  portableCursorHooksConfig,
+  portableClaudeHooksConfig,
+  portablePluginMcpConfig,
+  TRACEBACK_CONFIG_KEY,
+} = await import(pathToFileURL(distSetup).href);
+
 const packageJsonPath = resolve(repoRoot, "package.json");
 const claudePluginRoot = resolve(repoRoot, "plugins", "claude-traceback");
 const cursorPluginRoot = resolve(repoRoot, "plugins", "cursor-traceback");
@@ -51,6 +69,42 @@ for (const pluginPath of [claudePluginPath, cursorPluginPath]) {
 for (const pluginRoot of [claudePluginRoot, cursorPluginRoot]) {
   copySkill(repoRoot, pluginRoot);
 }
+
+const mcpConfig = portablePluginMcpConfig();
+for (const pluginRoot of [claudePluginRoot, cursorPluginRoot]) {
+  const mcpPath = resolve(pluginRoot, "mcp.json");
+  writeJson(mcpPath, mcpConfig);
+  process.stdout.write(`synced ${mcpPath} from portablePluginMcpConfig\n`);
+}
+
+const cursorRulePath = resolve(cursorPluginRoot, "rules", "traceback.mdc");
+ensureDir(dirname(cursorRulePath));
+writeFileSync(cursorRulePath, renderTracebackCursorRule(TRACEBACK_CONFIG_KEY), "utf-8");
+process.stdout.write(`synced ${cursorRulePath} from renderTracebackCursorRule\n`);
+
+const cursorHooksPath = resolve(cursorPluginRoot, "hooks", "hooks.json");
+ensureDir(dirname(cursorHooksPath));
+writeJson(cursorHooksPath, portableCursorHooksConfig());
+process.stdout.write(`synced ${cursorHooksPath} from portableCursorHooksConfig\n`);
+
+const claudeHooksPath = resolve(claudePluginRoot, "hooks", "hooks.json");
+ensureDir(dirname(claudeHooksPath));
+writeJson(claudeHooksPath, portableClaudeHooksConfig());
+process.stdout.write(`synced ${claudeHooksPath} from portableClaudeHooksConfig\n`);
+
+const cursorManifest = readJson(cursorPluginPath);
+cursorManifest.skills = "skills/";
+cursorManifest.rules = "rules/";
+cursorManifest.hooks = "hooks/hooks.json";
+cursorManifest.mcpServers = "mcp.json";
+writeJson(cursorPluginPath, cursorManifest);
+
+const claudeManifest = readJson(claudePluginPath);
+claudeManifest.skills = "skills/";
+claudeManifest.hooks = "hooks/hooks.json";
+claudeManifest.mcpServers = "mcp.json";
+writeJson(claudePluginPath, claudeManifest);
+process.stdout.write("updated plugin manifests to reference skills/rules/hooks/mcp\n");
 
 const telemetryEnvKeys = ["TRACEBACK_TELEMETRY_OPT_IN", "TRACEBACK_TELEMETRY_ENDPOINT"];
 for (const pluginRoot of [claudePluginRoot, cursorPluginRoot]) {

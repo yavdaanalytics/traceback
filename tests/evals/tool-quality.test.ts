@@ -124,6 +124,8 @@ describe("eval: Cursor warm-start rule contract is intact", () => {
     expect(rule).toContain("search_with_fallback");
     expect(rule).toContain("preToolUse");
     expect(rule).toContain("user-traceback");
+    expect(rule).toContain("Host-first routing");
+    expect(rule).toContain("relevant_patterns");
   });
 });
 

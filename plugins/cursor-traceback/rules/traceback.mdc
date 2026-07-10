@@ -10,7 +10,7 @@ You have access to the **traceback** MCP server for semantic recall over past co
 
 For **every** user message that is not purely conversational (greetings, thanks, or mode switches), your **first** tool invocation in that turn MUST be:
 
-`CallMcpTool` with `server` = `traceback` (or `user-traceback` for global Cursor installs), `toolName` = `search_with_fallback`, `query` = the user's full message, `repo_path` = workspace git root.
+`CallMcpTool` with `server` = `traceback`, `toolName` = `search_with_fallback`, `query` = the user's full message, `repo_path` = workspace git root.
 
 **Forbidden before `search_with_fallback` completes:** `Grep`, `Glob`, `Task` (explore), repo-wide reads of SETUP.md/README, or any repo-wide search tool. Cursor `preToolUse` hooks block Grep/Glob until you comply.
 
