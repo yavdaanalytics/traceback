@@ -4,8 +4,8 @@ description: >-
   Cut a traceback maintainer release to the public OSS GitHub repo, npm
   (@yavdaanalytics/traceback), and Claude/Cursor plugin artifacts. Use when the
   user asks to release, publish, cut a version, bump and tag, push a v* tag,
-  publish to npm, update the Claude marketplace plugin, or update the Cursor
-  marketplace plugin.
+  publish to npm, OIDC trusted publishing, update the Claude marketplace plugin,
+  or update the Cursor marketplace plugin.
 ---
 
 # Traceback release
@@ -20,7 +20,9 @@ CI: [`.github/workflows/release-tag.yml`](../../../.github/workflows/release-tag
 - Do **not** force-push, amend published history, or skip hooks.
 - Tag must be `v` + exact `package.json` version (CI fails otherwise).
 - Prefer the tag-triggered CI path over local `npm publish`.
+- Publish via **OIDC trusted publishing** (no interactive 2FA / security-key prompt in CI).
 - Claude/Cursor **marketplace listing** is manual after the GitHub Release exists — CI only attaches plugin zips.
+- If the release workflow itself changes, **bump a new patch version and tag** (do not re-run an old tag — `gh workflow run --ref vX.Y.Z` uses the workflow file *on that tag*).
 
 ## Progress checklist
 
@@ -31,10 +33,10 @@ Release Progress:
 - [ ] 0. Confirm intent + version bump type
 - [ ] 1. Preflight (clean tree, on main, tests)
 - [ ] 2. Bump package.json version + sync plugins
-- [ ] 3. Commit version/plugin sync
+- [ ] 3. Commit version/plugin sync (+ workflow fixes if any)
 - [ ] 4. Push main to origin (OSS)
 - [ ] 5. Create and push v* tag
-- [ ] 6. Wait for release-tag workflow
+- [ ] 6. Wait for release-tag workflow (release job must succeed)
 - [ ] 7. Verify npm + GitHub Release artifacts
 - [ ] 8. Marketplace handoff (Claude + Cursor)
 ```
@@ -73,7 +75,7 @@ If uncommitted feature work remains, stop and get it merged before releasing.
 
 ## Step 2 — Version + plugin sync
 
-1. Bump `"version"` in `package.json` (and keep `package-lock.json` in sync if npm rewrites it).
+1. Bump `"version"` in `package.json` **and** the root/`packages[""]` entries in `package-lock.json`.
 2. Sync plugin shells from portable setup assets:
 
 ```sh
@@ -121,12 +123,55 @@ npm run release:verify-tag -- "v$(node -p "require('./package.json').version")"
 Pushing `v*` runs `release-tag.yml`, which:
 
 1. Verifies tag ↔ `package.json` version
-2. Builds, warms fastembed, tests
-3. Syncs plugins again
-4. Zips Claude + Cursor plugin folders
-5. Publishes `@yavdaanalytics/traceback` to npm via **OIDC trusted publishing** (no `NODE_AUTH_TOKEN`; workflow upgrades npm CLI and strips setup-node `_authToken` so OIDC is not skipped). `NPM_TOKEN` is not used on the publish step.
-6. Creates a GitHub Release with plugin zips + checksums
-7. Commits plugin manifest sync back to default branch if needed
+2. Upgrades npm CLI to **11.5.1** (required for OIDC; do **not** use `npm@latest` / npm 12 on Node 22.14)
+3. Builds, warms fastembed, tests
+4. Syncs plugins again
+5. Zips Claude + Cursor plugin folders
+6. Publishes via **OIDC** (strips setup-node `_authToken`; **no** `NODE_AUTH_TOKEN` on the publish step)
+7. Verifies the version on the npm registry
+8. Creates a GitHub Release with plugin zips + checksums
+9. Optionally syncs plugin manifests back to default branch (secondary job; release job success is what matters)
+
+## npm OIDC / 2FA (read before debugging publish)
+
+### Preferred path — trusted publishing
+
+1. On npmjs.com → `@yavdaanalytics/traceback` → **Trusted Publisher**:
+   - Organization or user: `yavdaanalytics`
+   - Repository: `traceback`
+   - Workflow filename: `release-tag.yml` (filename only)
+   - Environment: empty unless the workflow sets one
+   - Allowed actions: include `npm publish`
+2. Publishing access may be “Require 2FA **or** granular token with bypass 2fa” — OIDC still works.
+3. Maintainer account 2FA via **security key** is fine — CI never prompts for the key when OIDC works.
+
+### Workflow invariants (do not regress)
+
+In `.github/workflows/release-tag.yml`:
+
+- `permissions.id-token: write`
+- `runs-on: ubuntu-latest` (GitHub-hosted only)
+- Node `22.14.0` (npm trusted-publishing minimum)
+- `npm install -g npm@11.5.1` before publish — **not** `npm@latest`
+- Publish step must **not** set `NODE_AUTH_TOKEN` / `secrets.NPM_TOKEN`
+- Before publish, delete `_authToken` lines from `$NPM_CONFIG_USERCONFIG` (setup-node writes a placeholder that skips OIDC and yields E404/ENEEDAUTH)
+
+### Fallback — Bypass-2FA granular token
+
+Only if OIDC is broken and the user asks for token publish:
+
+1. Create granular token with package write + **Bypass two-factor authentication**
+2. Put in `.env` as `npm_token=...` (never commit; never print)
+3. `gh secret set NPM_TOKEN` — but restoring token-based CI requires workflow changes; prefer fixing OIDC instead
+4. Validate with `npm whoami` before publish; a `401` means the token is dead
+
+### Local interactive publish
+
+`npm login` / `npm publish` will prompt for the security key. Use only for one-off unblock when the user explicitly requests it; prefer CI OIDC.
+
+### After a failed tag
+
+Do **not** force-move a published tag unless the user explicitly approves. Prefer a new patch (e.g. `0.1.3`) that includes the workflow fix, then push a new `v*` tag.
 
 ## Step 6 — Wait for CI
 
@@ -135,13 +180,14 @@ gh run list --workflow=release-tag.yml --limit 5
 gh run watch
 ```
 
-Or open the Actions tab for the tag push.
+Treat the **`release` job** as the gate. `sync-plugin-manifests-back` may fail separately; if plugins were already synced in the release commit, that is non-blocking for npm/GitHub Release.
 
 ## Step 7 — Verify npm + release assets
 
 ```sh
 npm run release:ensure-published -- --wait
 gh release view "v$(node -p "require('./package.json').version")"
+npm view @yavdaanalytics/traceback version
 ```
 
 Expect:
@@ -151,10 +197,6 @@ Expect:
   - `claude-traceback-vX.Y.Z.zip`
   - `cursor-traceback-vX.Y.Z.zip`
   - `checksums.txt`
-
-### npm publish failures
-
-If CI publish fails with 2FA / auth errors, follow the remediation printed by `scripts/publish-npm.mjs` (granular npm token with Bypass 2FA → `gh secret set NPM_TOKEN` → re-run workflow). Prefer fixing trusted publishing / OIDC long-term.
 
 Do **not** casually run `npm run release:publish` from a laptop unless the user explicitly wants a manual publish and understands it can race CI.
 
@@ -184,6 +226,7 @@ Release is complete only when all of these are true (or marketplace explicitly d
 git push origin main
 git tag "v$(node -p "require('./package.json').version")"
 git push origin "v$(node -p "require('./package.json').version")"
+gh run watch
 npm run release:ensure-published -- --wait
 gh release view "v$(node -p "require('./package.json').version")"
 ```
