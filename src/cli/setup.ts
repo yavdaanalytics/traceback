@@ -1200,7 +1200,7 @@ async function setupAllRepos(repoRoot: string, opts: SetupCliOptions): Promise<v
 
   console.log(
     "\n✅ Global traceback setup complete!\n" +
-      "  • Portable MCP: npx -y traceback (Cursor ~/.cursor/mcp.json, Claude ~/.claude/.mcp.json)\n" +
+      "  • Portable MCP: npx -y @yavdaanalytics/traceback (Cursor ~/.cursor/mcp.json, Claude ~/.claude/.mcp.json)\n" +
       "  • Global git hooks: ~/.traceback/hooks (post-commit indexing on every repo)\n" +
       "  • Global Cursor hooks: ~/.cursor/hooks.json (repo resolved from workspace_roots)\n" +
       "  • Claude Code: ~/.claude/settings.json warm-start hooks\n" +

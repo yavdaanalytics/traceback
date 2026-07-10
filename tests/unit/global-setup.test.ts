@@ -27,7 +27,10 @@ import {
 describe("command-paths", () => {
   it("uses portable MCP entry by default for fake dist", () => {
     expect(resolveCommandMode("C:/fake/dist")).toBe("portable");
-    expect(mcpServerEntryPortable()).toEqual({ command: "npx", args: ["-y", "traceback"] });
+    expect(mcpServerEntryPortable()).toEqual({
+      command: "npx",
+      args: ["-y", "@yavdaanalytics/traceback"],
+    });
     expect(warmStartCommandPortable("cursor-read")).toContain("traceback-warmstart");
     expect(warmStartCommandPortable("cursor-read")).not.toContain("--repo-path");
   });

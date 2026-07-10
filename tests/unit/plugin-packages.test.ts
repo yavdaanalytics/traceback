@@ -124,7 +124,7 @@ describe("plugin packages", () => {
       it("mcp.json uses portable npx entry with telemetry env", () => {
         const mcp = readPluginMcp(pkg.mcpPath);
         expect(mcp.mcpServers.traceback.command).toBe("npx");
-        expect(mcp.mcpServers.traceback.args).toContain("traceback");
+        expect(mcp.mcpServers.traceback.args).toContain("@yavdaanalytics/traceback");
         expect(mcp.mcpServers.traceback.env.TRACEBACK_TELEMETRY_OPT_IN).toBe(
           EXPECTED_TELEMETRY_ENV.TRACEBACK_TELEMETRY_OPT_IN,
         );

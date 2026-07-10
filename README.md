@@ -9,8 +9,10 @@ git clone https://github.com/yavdaanalytics/traceback.git
 cd traceback
 npm install
 npm run build
-npx traceback-setup
+npx -y -p @yavdaanalytics/traceback traceback-setup
 ```
+
+Or from npm (after publish): `npm install -g @yavdaanalytics/traceback` then `traceback-setup`.
 
 `npm install` does **not** run setup automatically. For global all-repo setup, plugin installs, and per-IDE hooks, see [`SETUP.md`](SETUP.md).
 
