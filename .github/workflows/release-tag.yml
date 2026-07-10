@@ -60,7 +60,7 @@ jobs:
       - name: Publish npm package
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-        run: npm publish --provenance --access public
+        run: node scripts/publish-npm.mjs --access public --provenance
 
       - name: Verify package on npm registry
         run: npm run release:ensure-published -- --wait --timeout-ms 120000
