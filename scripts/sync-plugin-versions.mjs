@@ -1,11 +1,13 @@
 #!/usr/bin/env node
 /**
  * Sync plugin package shells from setup.ts portable assets.
- * Requires `npm run build` first (imports from dist/).
+ * Builds dist/ automatically when missing (CI secondary jobs often skip an
+ * explicit build step; never fail solely for that reason).
  */
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
+import { execFileSync } from "node:child_process";
 
 function readJson(path) {
   return JSON.parse(readFileSync(path, "utf-8"));
@@ -32,11 +34,28 @@ function copySkill(repoRoot, pluginRoot) {
   process.stdout.write(`synced ${target} from repo SKILL.md\n`);
 }
 
-const repoRoot = process.cwd();
-const distSetup = resolve(repoRoot, "dist", "cli", "setup.js");
-if (!existsSync(distSetup)) {
-  throw new Error("dist/cli/setup.js missing — run `npm run build` before release:sync-plugins");
+function ensureDistSetup(repoRoot) {
+  const distSetup = resolve(repoRoot, "dist", "cli", "setup.js");
+  if (existsSync(distSetup)) return distSetup;
+
+  process.stdout.write("dist/cli/setup.js missing — running npm run build…\n");
+  const npmBin = process.platform === "win32" ? "npm.cmd" : "npm";
+  execFileSync(npmBin, ["run", "build"], {
+    cwd: repoRoot,
+    stdio: "inherit",
+    env: process.env,
+  });
+
+  if (!existsSync(distSetup)) {
+    throw new Error(
+      "dist/cli/setup.js still missing after npm run build — cannot sync plugins",
+    );
+  }
+  return distSetup;
 }
+
+const repoRoot = process.cwd();
+const distSetup = ensureDistSetup(repoRoot);
 
 const {
   renderTracebackCursorRule,

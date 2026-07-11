@@ -194,7 +194,12 @@ gh run list --workflow=release-tag.yml --limit 5
 gh run watch
 ```
 
-Treat the **`release` job** as the gate. `sync-plugin-manifests-back` may fail separately; if plugins were already synced in the release commit, that is non-blocking for npm/GitHub Release.
+Treat the **`release` job** as the gate for npm + GitHub Release.
+
+The secondary **`sync-plugin-manifests-back`** job must also succeed. It checks out
+`main`, runs `npm ci` + **`npm run build`** + `release:sync-plugins` +
+`release:verify-versions`, then commits any plugin package drift. `release:sync-plugins`
+auto-builds `dist/` if missing so a forgotten Build step cannot fail the job again.
 
 ## Step 7 — Verify npm + release assets
 
