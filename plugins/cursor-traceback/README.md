@@ -20,8 +20,9 @@ Full policy: [`docs/TELEMETRY.md`](../../docs/TELEMETRY.md).
 
 ## What this package includes
 
-- **Skill** (`skills/traceback/SKILL.md`) — host-first keyword routing metadata
-- **Rule** (`rules/traceback.mdc`) — always-on warm-start contract
+- **Skill** (`skills/traceback/SKILL.md`) — Cursor-discovery description + host-first routing + MCP call contract
+- **Rule** (`rules/traceback.mdc`) — always-on warm-start contract (`alwaysApply: true`)
+- **Hooks** (`hooks/hooks.json`) — beforeReadFile / Grep-Glob gate / afterMCPExecution marker
 - **MCP server** (`mcp.json`) — `npx -y @yavdaanalytics/traceback` stdio server entry
 
 ## Install in Cursor
@@ -34,7 +35,7 @@ After install, run **once per machine** (recommended):
 npx -y -p @yavdaanalytics/traceback traceback-setup --plugin --yes-all-repos
 ```
 
-This configures portable global MCP (`~/.cursor/mcp.json`), global Cursor hooks, global git indexing, and skills — no per-repo steps required.
+This configures portable global MCP (`~/.cursor/mcp.json`), global Cursor hooks + always-on rule (`~/.cursor/rules/traceback.mdc`), global git indexing, and skills — no per-repo steps required.
 
 Optional per-repo merge when project-level MCP files already exist:
 
@@ -85,9 +86,12 @@ Expected value:
 ```text
 .cursor/hooks.json
 .cursor/rules/traceback.mdc
-.cursor/skills/traceback/SKILL.md   (optional sync copy)
+~/.cursor/rules/traceback.mdc
 ~/.cursor/skills/traceback/SKILL.md
+~/.claude/skills/traceback/SKILL.md
 ```
+
+The skill description must include `Use when` and `search_with_fallback` so Cursor can auto-discover it.
 
 5. Make a commit and confirm indexing artifacts under that repo's `data/` directory.
 

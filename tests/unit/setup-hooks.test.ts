@@ -5,6 +5,8 @@ import { tmpdir } from "node:os";
 import {
   setupCursorHooks,
   installTracebackSkills,
+  installGlobalCursorRule,
+  renderTracebackCursorRule,
   setupVsCodeHooks,
   setupWindsurfHooks,
   TRACEBACK_RULE_MARKER,
@@ -234,6 +236,25 @@ describe("installTracebackSkills", () => {
     } finally {
       delete process.env.TRACEBACK_CURSOR_SKILLS_DIR;
       delete process.env.TRACEBACK_CLAUDE_SKILLS_DIR;
+    }
+  });
+});
+
+describe("installGlobalCursorRule", () => {
+  it("writes alwaysApply rule with user-traceback by default", () => {
+    const rulesDir = join(repoRoot, ".tmp-cursor-global-rules");
+    process.env.TRACEBACK_CURSOR_RULES_DIR = rulesDir;
+    try {
+      installGlobalCursorRule();
+      const rulePath = join(rulesDir, "traceback.mdc");
+      expect(existsSync(rulePath)).toBe(true);
+      const body = readFileSync(rulePath, "utf-8");
+      expect(body).toBe(renderTracebackCursorRule("user-traceback"));
+      expect(body).toContain("alwaysApply: true");
+      expect(body).toContain("user-traceback");
+      expect(body).toContain("GetMcpTools");
+    } finally {
+      delete process.env.TRACEBACK_CURSOR_RULES_DIR;
     }
   });
 });

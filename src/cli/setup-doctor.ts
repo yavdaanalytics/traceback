@@ -121,11 +121,55 @@ export function runSetupDoctor(repoRoot?: string): DoctorReport {
   });
 
   const skillPath = join(home, ".cursor", "skills", "traceback", "SKILL.md");
+  if (!existsSync(skillPath)) {
+    checks.push({
+      name: "Cursor global skill",
+      ok: false,
+      detail: `missing ${skillPath}`,
+    });
+  } else {
+    const skillBody = readFileSync(skillPath, "utf-8");
+    const hasDiscovery =
+      skillBody.includes("Use when") &&
+      skillBody.includes("search_with_fallback") &&
+      skillBody.includes("CallMcpTool");
+    checks.push({
+      name: "Cursor global skill",
+      ok: hasDiscovery,
+      detail: hasDiscovery
+        ? `${skillPath} (Cursor discovery description + agent instructions present)`
+        : `${skillPath} exists but missing Cursor discovery text (Use when / search_with_fallback / CallMcpTool) — re-run traceback-setup`,
+    });
+  }
+
+  const claudeSkillPath = join(home, ".claude", "skills", "traceback", "SKILL.md");
   checks.push({
-    name: "Cursor global skill",
-    ok: existsSync(skillPath),
-    detail: existsSync(skillPath) ? skillPath : `missing ${skillPath}`,
+    name: "Claude global skill",
+    ok: existsSync(claudeSkillPath),
+    detail: existsSync(claudeSkillPath) ? claudeSkillPath : `missing ${claudeSkillPath}`,
   });
+
+  const cursorRulePath = join(home, ".cursor", "rules", "traceback.mdc");
+  if (!existsSync(cursorRulePath)) {
+    checks.push({
+      name: "Cursor global rule",
+      ok: false,
+      detail: `missing ${cursorRulePath}`,
+    });
+  } else {
+    const ruleBody = readFileSync(cursorRulePath, "utf-8");
+    const ok =
+      ruleBody.includes("alwaysApply: true") &&
+      ruleBody.includes("search_with_fallback") &&
+      ruleBody.includes("<!-- traceback-warm-start -->");
+    checks.push({
+      name: "Cursor global rule",
+      ok,
+      detail: ok
+        ? `${cursorRulePath} (alwaysApply warm-start)`
+        : `${cursorRulePath} present but incomplete — re-run traceback-setup`,
+    });
+  }
 
   if (repoRoot) {
     const claudeMdPath = join(repoRoot, "CLAUDE.md");

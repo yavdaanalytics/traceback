@@ -226,12 +226,14 @@ function entriesCompatible(existing: unknown, desired: Record<string, unknown>):
 
 export function renderTracebackCursorRule(callServerId: string): string {
   return `---
+description: Traceback warm-start — call search_with_fallback before Grep/Glob on code/debug turns
 alwaysApply: true
 ---
 ${TRACEBACK_RULE_MARKER}
 ${TRACEBACK_SERVER_ID_MARKER} ${callServerId} -->
 
 You have access to the **traceback** MCP server for semantic recall over past coding-agent sessions.
+When relevant, read the global skill at \`~/.cursor/skills/traceback/SKILL.md\` (or the bundled plugin skill).
 
 ## MANDATORY — first tool call (contract violation if skipped)
 
@@ -239,13 +241,13 @@ For **every** user message that is not purely conversational (greetings, thanks,
 
 \`CallMcpTool\` with \`server\` = \`${callServerId}\`, \`toolName\` = \`search_with_fallback\`, \`query\` = the user's full message, \`repo_path\` = workspace git root.
 
-**Forbidden before \`search_with_fallback\` completes:** \`Grep\`, \`Glob\`, \`Task\` (explore), repo-wide reads of SETUP.md/README, or any repo-wide search tool. Cursor \`preToolUse\` hooks block Grep/Glob until you comply.
+Prefer \`GetMcpTools\` on that server first if the tool schema is unknown. **Forbidden before \`search_with_fallback\` completes:** \`Grep\`, \`Glob\`, \`Task\` (explore), repo-wide reads of SETUP.md/README, or any repo-wide search tool. Cursor \`preToolUse\` hooks block Grep/Glob until you comply.
 
 **MCP routing:** The mcp.json config key is \`traceback\`; Cursor global installs expose \`user-traceback\`. If a call fails with "server does not exist", call \`get_connection_info\` on whichever traceback server is listed under your MCP tools, then retry with the returned \`call_server_id\`.
 
 ## Host-first routing
 
-Before invoking MCP, apply the bundled \`traceback\` skill metadata (\`routing_mode: balanced_host_first\`):
+Apply the \`traceback\` skill metadata (\`routing_mode: balanced_host_first\`):
 
 - **strong** or **weak** keyword match → call \`search_with_fallback\`
 - **skip** only for clearly non-code prompts (weather, jokes, etc.)
@@ -259,6 +261,21 @@ Before invoking MCP, apply the bundled \`traceback\` skill metadata (\`routing_m
 
 Other useful traceback tools: \`get_connection_info\`, \`get_traceback_status\`, \`find_similar_sessions\`, \`get_session_detail\`, \`get_change_graph\`, \`blame_current\`.
 `;
+}
+
+/** Global always-on Cursor rule (~/.cursor/rules/traceback.mdc) for all workspaces. */
+export function installGlobalCursorRule(opts?: { callServerId?: string }): void {
+  const rulesDir =
+    process.env.TRACEBACK_CURSOR_RULES_DIR?.trim() || join(homedir(), ".cursor", "rules");
+  const rulePath = join(rulesDir, "traceback.mdc");
+  const callServerId = opts?.callServerId ?? resolveCallServerId("cursor", "global");
+  const content = renderTracebackCursorRule(callServerId);
+  const result = writeIfChanged(rulePath, content);
+  if (result === "unchanged") {
+    console.log(`traceback: Cursor global rule already up to date at ${rulePath}`);
+  } else {
+    console.log(`traceback: ${result} Cursor global rule at ${rulePath} (call_server_id=${callServerId})`);
+  }
 }
 
 /** Portable Cursor warm-start hooks (no hardcoded repo path; resolves from workspace). */
@@ -1185,10 +1202,13 @@ async function setupAllRepos(repoRoot: string, opts: SetupCliOptions): Promise<v
   console.log("\n🎯 Setting up global Cursor hooks...");
   setupGlobalCursorHooks(distDir);
 
+  console.log("\n📜 Installing global Cursor always-on rule...");
+  installGlobalCursorRule();
+
   console.log("\n🎯 Setting up Claude Code integration...");
   setupClaudeCodeHooks(repoRoot, { global: true });
 
-  console.log("\n🎯 Installing traceback skill metadata...");
+  console.log("\n🎯 Installing traceback skill (Cursor + Claude global)...");
   installTracebackSkills(repoRoot, distDir);
 
   console.log("\n🩺 Running setup doctor...");
@@ -1203,9 +1223,10 @@ async function setupAllRepos(repoRoot: string, opts: SetupCliOptions): Promise<v
       "  • Portable MCP: npx -y @yavdaanalytics/traceback (Cursor ~/.cursor/mcp.json, Claude ~/.claude/.mcp.json)\n" +
       "  • Global git hooks: ~/.traceback/hooks (post-commit indexing on every repo)\n" +
       "  • Global Cursor hooks: ~/.cursor/hooks.json (repo resolved from workspace_roots)\n" +
+      "  • Global Cursor rule: ~/.cursor/rules/traceback.mdc (alwaysApply)\n" +
       "  • Claude Code: ~/.claude/settings.json warm-start hooks\n" +
       "  • Skills: ~/.cursor/skills/traceback and ~/.claude/skills/traceback\n" +
-      "  • Per-repo host files are optional — MCP and hooks work without per-repo setup\n" +
+      "  • Per-repo host files are optional — MCP, skill, hooks, and rule work without per-repo setup\n" +
       "  • Run `traceback-setup --repo-only` in each repo to merge MCP configs and add CLAUDE.md onboarding\n",
   );
 }

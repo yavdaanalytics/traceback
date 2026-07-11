@@ -27,18 +27,21 @@ When prompted `Enable traceback for ALL repositories on this machine? [Y/n]`, ac
 - **Portable global MCP** — `npx -y @yavdaanalytics/traceback` in `~/.cursor/mcp.json` and `~/.claude/.mcp.json` (create-if-missing)
 - **Global git hooks** — `~/.traceback/hooks` via `core.hooksPath` (post-commit indexing on every repo; see [§6 — global hook, per-repo scope](#global-post-commit-hook-per-repo-scope))
 - **Global Cursor hooks** — `~/.cursor/hooks.json` (repo resolved from `workspace_roots` / `cwd`)
+- **Global Cursor rule** — `~/.cursor/rules/traceback.mdc` (`alwaysApply`, routes to `user-traceback`)
 - **Claude Code hooks** — `~/.claude/settings.json` warm-start MCP hooks
 - **Global git excludes** — `core.excludesFile` patterns for `/data/traceback.db`, `/data/lancedb/`, `/.traceback/` (no `.gitignore` pollution)
-- **Skills** — `SKILL.md` synced to `~/.cursor/skills/traceback` and `~/.claude/skills/traceback`
+- **Skills** — Cursor-discovery `SKILL.md` synced to `~/.cursor/skills/traceback` and `~/.claude/skills/traceback`
 
 ### Host Skills (Global Installation Only)
 
-SKILL.md provides host-first routing metadata (deciding when to invoke traceback MCP). 
+SKILL.md is a **Cursor/Claude agent skill** (discovery description + MCP call instructions) plus host-first routing metadata.
+
 It is installed **globally** during `traceback-setup` and is available to **all repositories** on the machine.
 
 **Global locations (after `traceback-setup`):**
 - `~/.claude/skills/traceback/SKILL.md` — Claude Code host skill gate
-- `~/.cursor/skills/traceback/SKILL.md` — Cursor IDE host skill gate
+- `~/.cursor/skills/traceback/SKILL.md` — Cursor IDE skill (auto-discovered via description)
+- `~/.cursor/rules/traceback.mdc` — Cursor always-on warm-start rule (`alwaysApply: true`, `user-traceback`)
 
 **Per-repo setup (`--repo-only`) does NOT install skills** — they are already available globally. Skills are per-machine, not per-repository.
 

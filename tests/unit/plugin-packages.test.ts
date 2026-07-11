@@ -73,6 +73,10 @@ describe("plugin packages", () => {
   it("bundle host-first SKILL.md synced from repo root", () => {
     const rootSkill = normalize(readFileSync(rootSkillPath, "utf-8"));
     expect(rootSkill).toContain("routing_mode: balanced_host_first");
+    expect(rootSkill).toContain("Use when");
+    expect(rootSkill).toContain("search_with_fallback");
+    expect(rootSkill).toContain("CallMcpTool");
+    expect(rootSkill).toContain("user-traceback");
 
     for (const pkg of pluginPackages) {
       expect(existsSync(pkg.skillPath), `${pkg.name} skill missing`).toBe(true);
@@ -80,6 +84,8 @@ describe("plugin packages", () => {
       expect(pluginSkill).toContain("routing_mode: balanced_host_first");
       expect(pluginSkill).toContain("<!-- traceback-skill -->");
       expect(pluginSkill).toContain("name: traceback-host-first-router");
+      expect(pluginSkill).toContain("Use when");
+      expect(pluginSkill).toContain("CallMcpTool");
       expect(rootSkill).toContain("name: traceback-host-first-router");
     }
   });
@@ -91,6 +97,8 @@ describe("plugin packages", () => {
     expect(bundled).toBe(expected);
     expect(bundled).toContain("Host-first routing");
     expect(bundled).toContain("relevant_patterns");
+    expect(bundled).toContain("alwaysApply: true");
+    expect(bundled).toContain("GetMcpTools");
   });
 
   it("cursor hooks match portableCursorHooksConfig from setup", () => {
