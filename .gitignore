@@ -22,11 +22,22 @@ requirements/semantic-debugger-feature-list.md
 # Local runtime / dev artifacts
 .warm-start-out.json
 .tmp-setup-skill-check/
+.tmp-*/
+.fake-npm-pkg/
+fake-npm-pkg/
+
+# Machine-local IDE hooks (absolute paths / TRACEBACK_DEV) — use global ~/.cursor/hooks.json
+.cursor/hooks.json
+
+# Setup-generated host hooks (TRACEBACK_DEV writes absolute paths; portable live in plugins/)
+.github/hooks/traceback-warmstart.json
 
 # Internal-only docs (keep local; not for public OSS tree)
 ROADMAP*.md
 PROMPT.md
 IMPLEMENTATION_*.md
+DOCS-*-GAP.md
+DOCS-SKILLS-GAP.md
 TOKEN_REDUCTION_IMPLEMENTATION.md
 SETUP_AUTOMATION_SUMMARY.md
 QUICKSTART_ENHANCEMENTS.md
