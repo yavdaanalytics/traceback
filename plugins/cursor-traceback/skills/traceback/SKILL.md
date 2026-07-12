@@ -37,6 +37,9 @@ keywords:
     - get_traceback_status
     - get_connection_info
     - search_with_fallback
+    - promote_pattern
+    - list_patterns
+    - submit_feedback
 negative_keywords:
   - weather
   - recipe
@@ -95,16 +98,35 @@ If "server does not exist", call `get_connection_info` on any listed traceback s
 
 ## After warm-start
 
-1. Narrow reads/searches using `session_matches`, `git_scope`, and `grep_result`.
-2. Prefer scoped traceback tools before repo-wide grep.
-3. If `relevant_patterns` is present, apply that guidance before edits.
+1. If `relevant_patterns` is present, **apply that guidance before any setup steps or edits** — these are distilled local warnings (env traps, unlisted prerequisites, tenant flags). Prefer them over re-deriving the lesson from a long session transcript.
+2. Narrow reads/searches using `session_matches`, `git_scope`, and `grep_result`.
+3. Prefer scoped traceback tools before repo-wide grep.
+4. Use sessions for *where/why code changed*; use promoted patterns for *machine/tenant gotchas that never land in git*.
 
-Other tools: `get_traceback_status`, `find_similar_sessions`, `get_session_detail`, `get_change_graph`, `blame_current`.
+Other tools: `get_traceback_status`, `find_similar_sessions`, `get_session_detail`, `get_change_graph`, `blame_current`, `list_patterns`.
+
+## Annotation memory loop (write-back)
+
+Blank models in fresh chats have no memory of local traps. Close the loop after you resolve one:
+
+1. **Detect** — env quirk, missing permission flag, unlisted prerequisite, or other non-obvious local gotcha that cost debugging time.
+2. **Propose** — summarize a short warning for the user (title + one-line guidance + trigger phrases that should match future prompts).
+3. **Persist only after explicit yes** — call `promote_pattern` with `title`, `trigger_text`, and `guidance` (same HITL contract as `submit_feedback`). Never silently promote.
+4. **Recall next time** — a later blank session runs `search_with_fallback`; matching `relevant_patterns` surface the warning so the agent avoids the same mistake.
+
+Pair with `submit_feedback(verdict="reject")` when a recalled *session* was the wrong match (down-ranks that session). Promote when the lesson itself should stick as a durable annotation.
+
+Example shape (after user confirms):
+
+- `title`: "Agent 365 tenant governance"
+- `trigger_text`: "workiq Agent 365 Entra governance M365 Admin"
+- `guidance`: "Requires tenant-level Agent 365 governance enabled in M365 Admin Center before configure succeeds."
 
 ## Tuning source of truth
 
 - Trigger telemetry (`trigger_score`, `trigger_decision`, `trigger_terms_count`)
 - `submit_feedback` outcomes
+- `promote_pattern` / `list_patterns` usage (are traps being written back?)
 - Efficiency report token trends
 
 <!-- traceback-skill -->
