@@ -1,0 +1,108 @@
+name: publish-marketplace
+
+on:
+  workflow_run:
+    workflows: ["release-tag"]
+    types: [completed]
+    branches: [main, master]
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Fetch secrets from Doppler
+        uses: dopplerhq/secrets-fetch-action@v2.0.0
+        with:
+          doppler-token: ${{ secrets.DOPPLER_TOKEN }}
+          doppler-project: pbi-embed
+          doppler-config: dev_personal
+
+      - name: Checkout traceback repo
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Get tag and version
+        id: version
+        run: |
+          TAG=$(git describe --tags --abbrev=0)
+          VERSION=${TAG#v}
+          SHA=$(git rev-parse "${TAG}^{commit}")
+          echo "tag=${TAG}" >> $GITHUB_OUTPUT
+          echo "version=${VERSION}" >> $GITHUB_OUTPUT
+          echo "sha=${SHA}" >> $GITHUB_OUTPUT
+
+      - name: Checkout marketplace repo
+        uses: actions/checkout@v4
+        with:
+          repository: yavdaanalytics/yavda-marketplace
+          token: ${{ env.GITHUB_TOKEN }}
+          path: marketplace
+
+      - name: Update Claude catalog
+        run: |
+          cd marketplace
+          node << 'EOF'
+          const fs = require('fs');
+          const path = require('path');
+
+          const claudePath = '.claude-plugin/marketplace.json';
+          const catalog = JSON.parse(fs.readFileSync(claudePath, 'utf-8'));
+
+          const tracebackIndex = catalog.plugins.findIndex(p => p.name === 'traceback');
+          if (tracebackIndex === -1) {
+            console.error('traceback not found in Claude catalog');
+            process.exit(1);
+          }
+
+          catalog.plugins[tracebackIndex].version = '${{ steps.version.outputs.version }}';
+          catalog.plugins[tracebackIndex].source.sha = '${{ steps.version.outputs.sha }}';
+          catalog.plugins[tracebackIndex].source.ref = 'main';
+
+          fs.writeFileSync(claudePath, JSON.stringify(catalog, null, 2) + '\n');
+          console.log(`Updated Claude catalog: traceback@${{ steps.version.outputs.version }}`);
+          EOF
+
+      - name: Sync Cursor plugin
+        run: |
+          cd marketplace
+          rm -rf traceback
+          cp -R "${{ github.workspace }}/plugins/cursor-traceback" traceback
+
+      - name: Update Cursor catalog
+        run: |
+          cd marketplace
+          node << 'EOF'
+          const fs = require('fs');
+          const path = require('path');
+
+          const cursorPath = '.cursor-plugin/marketplace.json';
+          const catalog = JSON.parse(fs.readFileSync(cursorPath, 'utf-8'));
+
+          const tracebackIndex = catalog.plugins.findIndex(p => p.name === 'traceback');
+          if (tracebackIndex === -1) {
+            console.error('traceback not found in Cursor catalog');
+            process.exit(1);
+          }
+
+          catalog.plugins[tracebackIndex].version = '${{ steps.version.outputs.version }}';
+
+          fs.writeFileSync(cursorPath, JSON.stringify(catalog, null, 2) + '\n');
+          console.log(`Updated Cursor catalog: traceback@${{ steps.version.outputs.version }}`);
+          EOF
+
+      - name: Commit and push marketplace
+        working-directory: marketplace
+        env:
+          GITHUB_TOKEN: ${{ env.GITHUB_TOKEN }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git config --global url."https://${{ env.GITHUB_TOKEN }}@github.com/".insteadOf "https://github.com/"
+          git add .
+          git commit -m "chore: publish traceback@${{ steps.version.outputs.version }}"
+          git push origin main
