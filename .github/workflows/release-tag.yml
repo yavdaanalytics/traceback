@@ -89,6 +89,16 @@ jobs:
             dist/plugins/*.zip
             dist/plugins/checksums.txt
 
+  # Tag pushes cannot use workflow_run+branches filters — call marketplace publish directly.
+  publish-marketplace:
+    needs: release
+    if: startsWith(github.ref, 'refs/tags/v')
+    uses: ./.github/workflows/publish-marketplace.yml
+    secrets: inherit
+    with:
+      tag: ${{ github.ref_name }}
+      sha: ${{ github.sha }}
+
   sync-plugin-manifests-back:
     needs: release
     if: startsWith(github.ref, 'refs/tags/v')

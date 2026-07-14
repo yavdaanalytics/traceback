@@ -1,19 +1,57 @@
 name: publish-marketplace
 
+# Called from release-tag after a successful npm/GitHub release.
+# Also manually runnable for backfills / retries.
 on:
-  workflow_run:
-    workflows: ["release-tag"]
-    types: [completed]
-    branches: [main, master]
+  workflow_call:
+    inputs:
+      tag:
+        description: "Release tag (e.g. v0.1.6)"
+        required: true
+        type: string
+      version:
+        description: "Semver without v prefix (defaults to tag without v)"
+        required: false
+        type: string
+        default: ""
+      sha:
+        description: "Release commit SHA (defaults to checked-out HEAD)"
+        required: false
+        type: string
+        default: ""
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag (e.g. v0.1.6)"
+        required: true
+        type: string
 
 permissions:
   contents: read
 
 jobs:
   publish:
-    if: ${{ github.event.workflow_run.conclusion == 'success' }}
     runs-on: ubuntu-latest
     steps:
+      - name: Resolve version inputs
+        id: ver
+        run: |
+          TAG="${{ inputs.tag }}"
+          if [ -z "$TAG" ]; then
+            echo "tag input is required" >&2
+            exit 1
+          fi
+          VERSION="${{ inputs.version }}"
+          SHA="${{ inputs.sha }}"
+          if [ -z "$VERSION" ]; then
+            VERSION="${TAG#v}"
+          fi
+          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          if [ -n "$SHA" ]; then
+            echo "sha=${SHA}" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Fetch secrets from Doppler
         uses: dopplerhq/secrets-fetch-action@v2.0.0
         with:
@@ -21,20 +59,22 @@ jobs:
           doppler-project: pbi-embed
           doppler-config: dev_personal
 
-      - name: Checkout traceback repo
+      - name: Checkout traceback at release tag
         uses: actions/checkout@v4
         with:
+          ref: ${{ steps.ver.outputs.tag }}
           fetch-depth: 0
 
-      - name: Get tag and version
-        id: version
+      - name: Resolve SHA if not provided
+        id: sha
         run: |
-          TAG=$(git describe --tags --abbrev=0)
-          VERSION=${TAG#v}
-          SHA=$(git rev-parse "${TAG}^{commit}")
-          echo "tag=${TAG}" >> $GITHUB_OUTPUT
-          echo "version=${VERSION}" >> $GITHUB_OUTPUT
-          echo "sha=${SHA}" >> $GITHUB_OUTPUT
+          if [ -n "${{ steps.ver.outputs.sha }}" ]; then
+            echo "sha=${{ steps.ver.outputs.sha }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+          fi
+          echo "version=${{ steps.ver.outputs.version }}" >> "$GITHUB_OUTPUT"
+          echo "tag=${{ steps.ver.outputs.tag }}" >> "$GITHUB_OUTPUT"
 
       - name: Checkout marketplace repo
         uses: actions/checkout@v4
@@ -43,66 +83,74 @@ jobs:
           token: ${{ env.GITHUB_TOKEN }}
           path: marketplace
 
-      - name: Update Claude catalog
+      - name: Update Claude + Cursor catalogs and sync Cursor plugin
+        env:
+          VER: ${{ steps.sha.outputs.version }}
+          SHA: ${{ steps.sha.outputs.sha }}
         run: |
+          set -euo pipefail
           cd marketplace
-          node << 'EOF'
-          const fs = require('fs');
-          const path = require('path');
 
-          const claudePath = '.claude-plugin/marketplace.json';
-          const catalog = JSON.parse(fs.readFileSync(claudePath, 'utf-8'));
+          node <<'EOF'
+          const fs = require("fs");
 
-          const tracebackIndex = catalog.plugins.findIndex(p => p.name === 'traceback');
-          if (tracebackIndex === -1) {
-            console.error('traceback not found in Claude catalog');
-            process.exit(1);
+          function bumpPatch(v) {
+            const parts = String(v || "1.0.0").split(".").map((n) => Number(n) || 0);
+            while (parts.length < 3) parts.push(0);
+            parts[2] += 1;
+            return parts.join(".");
           }
 
-          catalog.plugins[tracebackIndex].version = '${{ steps.version.outputs.version }}';
-          catalog.plugins[tracebackIndex].source.sha = '${{ steps.version.outputs.sha }}';
-          catalog.plugins[tracebackIndex].source.ref = 'main';
+          const ver = process.env.VER;
+          const sha = process.env.SHA;
 
-          fs.writeFileSync(claudePath, JSON.stringify(catalog, null, 2) + '\n');
-          console.log(`Updated Claude catalog: traceback@${{ steps.version.outputs.version }}`);
+          const claudePath = ".claude-plugin/marketplace.json";
+          const claude = JSON.parse(fs.readFileSync(claudePath, "utf-8"));
+          const ci = claude.plugins.findIndex((p) => p.name === "traceback");
+          if (ci < 0) throw new Error("traceback not found in Claude catalog");
+          claude.plugins[ci].version = ver;
+          claude.plugins[ci].source.sha = sha;
+          claude.plugins[ci].source.ref = "main";
+          claude.version = bumpPatch(claude.version);
+          fs.writeFileSync(claudePath, `${JSON.stringify(claude, null, 2)}\n`);
+          console.log(`Claude catalog ${claude.version}; traceback@${ver} sha=${sha}`);
+
+          const cursorPath = ".cursor-plugin/marketplace.json";
+          const cursor = JSON.parse(fs.readFileSync(cursorPath, "utf-8"));
+          const xi = cursor.plugins.findIndex((p) => p.name === "traceback");
+          if (xi < 0) throw new Error("traceback not found in Cursor catalog");
+          cursor.plugins[xi].version = ver;
+          if (cursor.metadata) {
+            cursor.metadata.version = bumpPatch(cursor.metadata.version);
+          }
+          fs.writeFileSync(cursorPath, `${JSON.stringify(cursor, null, 2)}\n`);
+          console.log(
+            `Cursor catalog ${cursor.metadata?.version ?? "?"}; traceback@${ver}`,
+          );
           EOF
 
-      - name: Sync Cursor plugin
-        run: |
-          cd marketplace
           rm -rf traceback
-          cp -R "${{ github.workspace }}/plugins/cursor-traceback" traceback
+          cp -R "${GITHUB_WORKSPACE}/plugins/cursor-traceback" traceback
 
-      - name: Update Cursor catalog
-        run: |
-          cd marketplace
-          node << 'EOF'
-          const fs = require('fs');
-          const path = require('path');
-
-          const cursorPath = '.cursor-plugin/marketplace.json';
-          const catalog = JSON.parse(fs.readFileSync(cursorPath, 'utf-8'));
-
-          const tracebackIndex = catalog.plugins.findIndex(p => p.name === 'traceback');
-          if (tracebackIndex === -1) {
-            console.error('traceback not found in Cursor catalog');
-            process.exit(1);
-          }
-
-          catalog.plugins[tracebackIndex].version = '${{ steps.version.outputs.version }}';
-
-          fs.writeFileSync(cursorPath, JSON.stringify(catalog, null, 2) + '\n');
-          console.log(`Updated Cursor catalog: traceback@${{ steps.version.outputs.version }}`);
-          EOF
+          PLUGIN_VER=$(node -p "require('./traceback/.cursor-plugin/plugin.json').version")
+          if [ "$PLUGIN_VER" != "$VER" ]; then
+            echo "Vendored plugin version $PLUGIN_VER != release $VER" >&2
+            exit 1
+          fi
 
       - name: Commit and push marketplace
         working-directory: marketplace
         env:
           GITHUB_TOKEN: ${{ env.GITHUB_TOKEN }}
+          VER: ${{ steps.sha.outputs.version }}
         run: |
+          set -euo pipefail
           git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git config --global url."https://${{ env.GITHUB_TOKEN }}@github.com/".insteadOf "https://github.com/"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add .
-          git commit -m "chore: publish traceback@${{ steps.version.outputs.version }}"
-          git push origin main
+          if git diff --cached --quiet; then
+            echo "Marketplace already at traceback@${VER} — nothing to commit."
+            exit 0
+          fi
+          git commit -m "chore: publish traceback@${VER}"
+          git push origin HEAD:main

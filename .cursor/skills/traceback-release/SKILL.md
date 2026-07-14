@@ -196,6 +196,11 @@ gh run watch
 
 Treat the **`release` job** as the gate for npm + GitHub Release.
 
+**`publish-marketplace`** is a reusable workflow **called from `release-tag`** after
+`release` succeeds (tag `v*`). Do **not** rely on `workflow_run` + `branches` —
+that never fires for tag-triggered `release-tag`. Manual backfill:
+`gh workflow run publish-marketplace.yml -f tag=vX.Y.Z`.
+
 The secondary **`sync-plugin-manifests-back`** job must also succeed. It checks out
 `main`, runs `npm ci` + **`npm run build`** + `release:sync-plugins` +
 `release:verify-versions`, then commits any plugin package drift. `release:sync-plugins`
