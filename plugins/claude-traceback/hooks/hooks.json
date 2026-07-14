@@ -2,37 +2,11 @@
   "hooks": {
     "UserPromptSubmit": [
       {
-        "matcher": "*",
         "hooks": [
           {
-            "type": "mcp_tool",
-            "server": "traceback",
-            "tool": "search_with_fallback",
-            "input": {
-              "query": "${user_input}",
-              "repo_path": "${cwd}"
-            },
-            "statusMessage": "Warming up traceback context...",
-            "async": true,
-            "asyncRewake": true
-          }
-        ]
-      }
-    ],
-    "PreToolUse": [
-      {
-        "matcher": "Read",
-        "hooks": [
-          {
-            "type": "mcp_tool",
-            "server": "traceback",
-            "tool": "search_with_fallback",
-            "input": {
-              "query": "${tool_input.file_path}",
-              "repo_path": "${cwd}"
-            },
-            "statusMessage": "Scoping search context...",
-            "async": true
+            "type": "command",
+            "command": "npx -y -p @yavdaanalytics/traceback traceback-warmstart --format claude",
+            "timeout": 90
           }
         ]
       }
