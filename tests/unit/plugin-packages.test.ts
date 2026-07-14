@@ -114,8 +114,12 @@ describe("plugin packages", () => {
     const hooksPath = join(repoRoot, "plugins", "claude-traceback", "hooks", "hooks.json");
     const bundled = JSON.parse(readFileSync(hooksPath, "utf-8"));
     expect(bundled).toEqual(portableClaudeHooksConfig());
-    expect(bundled.hooks.UserPromptSubmit[0].hooks[0].tool).toBe("search_with_fallback");
-    expect(bundled.hooks.PreToolUse[0].matcher).toBe("Read");
+    const hook = bundled.hooks.UserPromptSubmit[0].hooks[0];
+    expect(hook.type).toBe("command");
+    expect(hook.command).toContain("traceback-warmstart");
+    expect(hook.command).toContain("--format claude");
+    // Claude Code cannot inject context on PreToolUse - must not be wired.
+    expect(bundled.hooks.PreToolUse).toBeUndefined();
   });
 
   it("mcp.json matches portablePluginMcpConfig from setup", () => {

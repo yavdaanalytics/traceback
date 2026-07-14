@@ -51,6 +51,12 @@ describe("stdin query extraction", () => {
     ).toBe("src/auth.ts");
   });
 
+  it("reads claude UserPromptSubmit prompt", () => {
+    expect(extractQueryFromStdin("claude", { hook_event_name: "UserPromptSubmit", prompt: "why history not loading" })).toBe(
+      "why history not loading",
+    );
+  });
+
   it("reads cursor-read file_path", () => {
     expect(extractQueryFromStdin("cursor-read", { file_path: "src/db.ts" })).toBe("src/db.ts");
   });
@@ -101,6 +107,17 @@ describe("runWarmStart", () => {
       stdin: { hook_event_name: "UserPromptSubmit" },
     });
     const parsed = JSON.parse(out);
+    expect(parsed.hookSpecificOutput.additionalContext).toContain("sess-1");
+  });
+
+  it("returns claude hook JSON with additionalContext", async () => {
+    const out = await runWarmStart({
+      format: "claude",
+      repoPath: process.cwd(),
+      stdin: { hook_event_name: "UserPromptSubmit", prompt: "jwt bug" },
+    });
+    const parsed = JSON.parse(out);
+    expect(parsed.hookSpecificOutput.hookEventName).toBe("UserPromptSubmit");
     expect(parsed.hookSpecificOutput.additionalContext).toContain("sess-1");
   });
 
