@@ -52,13 +52,6 @@ jobs:
             echo "sha=${SHA}" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Fetch secrets from Doppler
-        uses: dopplerhq/secrets-fetch-action@v2.0.0
-        with:
-          doppler-token: ${{ secrets.DOPPLER_TOKEN }}
-          doppler-project: pbi-embed
-          doppler-config: dev_personal
-
       - name: Checkout traceback at release tag
         uses: actions/checkout@v4
         with:
@@ -80,7 +73,8 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: yavdaanalytics/yavda-marketplace
-          token: ${{ env.GITHUB_TOKEN }}
+          # Default GITHUB_TOKEN cannot push to a different private repo.
+          token: ${{ secrets.MARKETPLACE_TOKEN }}
           path: marketplace
 
       - name: Update Claude + Cursor catalogs and sync Cursor plugin
@@ -141,7 +135,6 @@ jobs:
       - name: Commit and push marketplace
         working-directory: marketplace
         env:
-          GITHUB_TOKEN: ${{ env.GITHUB_TOKEN }}
           VER: ${{ steps.sha.outputs.version }}
         run: |
           set -euo pipefail
