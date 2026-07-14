@@ -5,7 +5,9 @@ description: >-
   (search_with_fallback over past agent sessions, git history, and scoped grep).
   Use when debugging, fixing bugs/regressions/errors, searching code history,
   finding where something is defined or used, recalling prior sessions/commits,
-  or when the user mentions traceback, semantic recall, or session history.
+  or when the user mentions traceback, semantic recall, or session history —
+  including any "why is X broken/failing/not working/not loading" question.
+  Invoke it BEFORE Grep, Glob, or Explore/search agents for these tasks.
   Skip only for clearly non-code prompts (weather, jokes, recipes, sports).
 keywords:
   trigger:
@@ -25,6 +27,9 @@ keywords:
     - search code history
     - where is
     - find usage
+    - not loading
+    - not working
+    - why is
     - semantic
     - recall
   concepts:
@@ -62,14 +67,15 @@ routing_contract:
   skip: "Skip only for clearly non-code/non-debug prompts."
 ---
 
-# Traceback (Cursor / host skill)
+# Traceback (host skill — Claude Code & Cursor)
 
 Semantic warm-start over past coding-agent sessions, git history, and scoped grep.
 Installed globally at `~/.cursor/skills/traceback` (and Claude `~/.claude/skills/traceback`).
 
-## When to use (Cursor)
+## When to use
 
-Apply this skill whenever the turn involves code, debugging, history, or locating definitions/usages.
+Apply this skill whenever the turn involves code, debugging, history, or locating definitions/usages — regardless of host.
+Invoke it before Grep/Glob/Explore-style exploration for those tasks.
 Skip only greetings, thanks, mode switches, or clearly non-code topics.
 
 ## Mandatory first MCP call
