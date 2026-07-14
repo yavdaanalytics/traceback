@@ -1,6 +1,16 @@
 # traceback
 
-Semantic debugger MCP server: helps LLM agents find the right code *fast* by warming up grep with embedding-based context recall — turning a blind O(repo) search into a scoped O(session) search.
+Debugging the way human memory works: **cued recall**, then **ground-truth verification**, then **exhaustive search** only if recall fails.
+
+LLM agents usually grep the whole repo blind. Humans don't. A familiar error, phrase, or past bug cues “I've seen this,” then you check the commit history to confirm order and cause — and only then dig through every file.
+
+traceback is an MCP warm-start server that mirrors that pattern, so agents search *O(session / commit scope)* instead of *O(repo)* by default:
+
+1. **Cue** — cosine similarity over past agent sessions (“this feels familiar”)
+2. **Verify** — git commits / diffs linked to those sessions (the receipt)
+3. **Fallback** — scoped grep that widens to the full repo if recall is empty or wrong
+
+Embeddings are a fuzzy associative cue; git is what stops misremembered sessions from becoming the product.
 
 ## Quick start
 
@@ -23,15 +33,17 @@ Or from npm (after publish): `npm install -g @yavdaanalytics/traceback` then `tr
 traceback **sequences** fuzzy recall before precise search via a 4-layer funnel (`search_with_fallback`):
 
 ```
-Query → L1 session cosine (optional) → L2 git pickaxe + intent → L3 scoped grep (widens if empty) → L4 refinements
+Cue (L1 sessions) → Verify (L2 git) → Fallback (L3 scoped→full grep) → Refine (L4)
 ```
 
-| Layer | What | Always runs? |
-|-------|------|--------------|
-| **L1** | Past session embeddings (LanceDB) | Attempted; may be empty on cold start |
-| **L2** | `git log -S` + commit-message embeddings | Yes |
-| **L3** | Scoped `git grep` → widen to full repo | Yes |
-| **L4** | Symbol / diff / keyword refinements | Partial |
+| Layer | Role | What | Always runs? |
+|-------|------|------|--------------|
+| **L1** | Cue | Past session embeddings (LanceDB) | Attempted; may be empty on cold start |
+| **L2** | Verify | `git log -S` + commit-message embeddings | Yes — the ground-truth receipt |
+| **L3** | Fallback | Scoped `git grep` → widen to full repo | Yes — when recall is empty or wrong |
+| **L4** | Refine | Symbol / diff / keyword refinements | Partial |
+
+Vectors alone can confabulate (wrong order, wrong cause). Session→commit links and git diffs are the calendar/receipt that confirm or correct the cue. Grep is the last resort when even that comes up empty.
 
 Deep dive: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
 
@@ -43,9 +55,9 @@ Deep dive: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
 
 ## Why it matters
 
-- **Speed** — search hundreds of scoped lines instead of tens of thousands.
-- **Recall** — semantic match finds "token expiry" when you said "jwt timeout".
-- **Tokens** — fewer noisy grep hits means the agent can read all matches.
+- **Cued, not blind** — agents start from familiar sessions and commits, not a whole-repo scan.
+- **Verified** — git history corrects fuzzy recall instead of trusting embeddings alone.
+- **Cheap when it works** — hundreds of scoped lines instead of tens of thousands; semantic match finds "token expiry" when you said "jwt timeout".
 
 **Real-world proof (private production repo):**
 
