@@ -25,6 +25,7 @@ import {
   resolveCommandMode,
   mcpServerEntryDev,
   mcpServerEntryPortable,
+  npxPackageBin,
   warmStartCommandDev,
   warmStartCommandPortable,
 } from "./command-paths.js";
@@ -302,43 +303,25 @@ export function portableCursorHooksConfig(): Record<string, unknown> {
   };
 }
 
-/** Portable Claude Code MCP warm-start hooks (repo from ${cwd}). */
+/**
+ * Portable Claude Code warm-start hooks (repo resolved from hook stdin cwd).
+ *
+ * Claude Code only supports `type: "command"` hooks that receive JSON on stdin
+ * and inject context via `hookSpecificOutput.additionalContext` on stdout —
+ * there is no `mcp_tool` hook type and no `${...}` variable interpolation.
+ * Only UserPromptSubmit is wired: PreToolUse does not support additionalContext,
+ * so plain stdout there never reaches the model.
+ */
 export function portableClaudeHooksConfig(): Record<string, unknown> {
   return {
     hooks: {
       UserPromptSubmit: [
         {
-          matcher: "*",
           hooks: [
             {
-              type: "mcp_tool",
-              server: "traceback",
-              tool: "search_with_fallback",
-              input: {
-                query: "${user_input}",
-                repo_path: "${cwd}",
-              },
-              statusMessage: "Warming up traceback context...",
-              async: true,
-              asyncRewake: true,
-            },
-          ],
-        },
-      ],
-      PreToolUse: [
-        {
-          matcher: "Read",
-          hooks: [
-            {
-              type: "mcp_tool",
-              server: "traceback",
-              tool: "search_with_fallback",
-              input: {
-                query: "${tool_input.file_path}",
-                repo_path: "${cwd}",
-              },
-              statusMessage: "Scoping search context...",
-              async: true,
+              type: "command",
+              command: npxPackageBin(WARM_START_BIN, ["--format", "claude"]),
+              timeout: 90,
             },
           ],
         },
@@ -621,111 +604,99 @@ export function setupGlobalHooks(opts?: { chainHooks?: boolean; packageDistDir?:
   );
 }
 
-export function setupClaudeCodeHooks(repoRoot: string, opts?: { global?: boolean }): void {
-  const claudeSettingsPath = resolve(homedir(), ".claude", "settings.json");
+/** Env override so tests never touch the real ~/.claude/settings.json. */
+export function claudeSettingsPath(): string {
+  const override = process.env.TRACEBACK_CLAUDE_SETTINGS_PATH?.trim();
+  return override || resolve(homedir(), ".claude", "settings.json");
+}
+
+function isTracebackWarmStartHook(hook: unknown): boolean {
+  const h = hook as Record<string, unknown> | null;
+  if (!h) return false;
+  // Legacy invalid schema (type: "mcp_tool") that Claude Code never executed.
+  if (h.type === "mcp_tool" && h.server === "traceback") return true;
+  if (h.type === "command" && typeof h.command === "string") {
+    return h.command.includes(WARM_START_BIN) || h.command.includes(WARM_START_SCRIPT);
+  }
+  return false;
+}
+
+/** Remove traceback entries (including legacy mcp_tool ones) from a hook event array. */
+function stripTracebackHooks(eventHooks: unknown[]): unknown[] {
+  const kept: unknown[] = [];
+  for (const entry of eventHooks) {
+    const matcherObj = entry as { hooks?: unknown[] } | null;
+    if (!matcherObj || !Array.isArray(matcherObj.hooks)) {
+      kept.push(entry);
+      continue;
+    }
+    matcherObj.hooks = matcherObj.hooks.filter((h) => !isTracebackWarmStartHook(h));
+    if (matcherObj.hooks.length > 0) kept.push(entry);
+  }
+  return kept;
+}
+
+export function setupClaudeCodeHooks(
+  repoRoot: string,
+  opts?: { global?: boolean },
+  packageDistDir: string = distDir,
+): void {
+  const settingsPath = claudeSettingsPath();
   let settings: Record<string, unknown> = {};
 
   // Read existing settings if they exist
-  if (existsSync(claudeSettingsPath)) {
-    const raw = readFileSync(claudeSettingsPath, "utf-8");
+  if (existsSync(settingsPath)) {
+    const raw = readFileSync(settingsPath, "utf-8");
     try {
       settings = (JSON.parse(raw) as Record<string, unknown>) ?? {};
     } catch {
       console.warn(
-        `traceback: ~/.claude/settings.json is not valid JSON - skipping Claude Code hook setup. ` +
+        `traceback: ${settingsPath} is not valid JSON - skipping Claude Code hook setup. ` +
           `Fix the JSON manually and re-run setup if needed.`,
       );
       return;
     }
   } else {
-    // Ensure .claude directory exists
-    const claudeDir = dirname(claudeSettingsPath);
+    const claudeDir = dirname(settingsPath);
     if (!existsSync(claudeDir)) {
       mkdirSync(claudeDir, { recursive: true });
     }
   }
 
-  // Initialize hooks object if it doesn't exist
   const hooks = (settings.hooks as Record<string, unknown> | undefined) ?? {};
   settings.hooks = hooks;
 
-  // Helper: get matcher object from array or create it
-  function getOrCreateMatcher(
-    eventName: string,
-    matcherStr: string,
-  ): { matcher: string; hooks: unknown[] } {
-    const eventHooks = (hooks[eventName] as unknown[] | undefined) ?? [];
-    let matcherObj = eventHooks.find(
-      (h) => (h as Record<string, unknown>)?.matcher === matcherStr,
-    ) as { matcher: string; hooks: unknown[] } | undefined;
-
-    if (!matcherObj) {
-      matcherObj = { matcher: matcherStr, hooks: [] };
-      eventHooks.push(matcherObj);
-      hooks[eventName] = eventHooks;
+  // Migrate: drop stale traceback hooks (legacy mcp_tool schema was never valid
+  // in Claude Code; PreToolUse cannot inject context so it is no longer wired).
+  for (const eventName of ["UserPromptSubmit", "PreToolUse"]) {
+    const eventHooks = hooks[eventName] as unknown[] | undefined;
+    if (!Array.isArray(eventHooks)) continue;
+    const cleaned = stripTracebackHooks(eventHooks);
+    if (cleaned.length > 0) {
+      hooks[eventName] = cleaned;
+    } else {
+      delete hooks[eventName];
     }
-
-    if (!Array.isArray(matcherObj.hooks)) {
-      matcherObj.hooks = [];
-    }
-
-    return matcherObj;
   }
 
-  // Helper: check if a hook already exists
-  function hookExists(hooksArray: unknown[], toolName: string): boolean {
-    return hooksArray.some(
-      (h) =>
-        (h as Record<string, unknown>)?.type === "mcp_tool" &&
-        (h as Record<string, unknown>)?.tool === toolName,
-    );
-  }
+  // UserPromptSubmit command hook: Claude Code pipes {prompt, cwd, ...} JSON on
+  // stdin; the warm-start CLI resolves the repo from cwd and injects context via
+  // hookSpecificOutput.additionalContext.
+  const command = warmStartCommand(
+    packageDistDir,
+    "claude",
+    opts?.global ? undefined : repoRoot,
+  );
+  const userPromptHooks = (hooks.UserPromptSubmit as unknown[] | undefined) ?? [];
+  userPromptHooks.push({
+    hooks: [{ type: "command", command, timeout: 90 }],
+  });
+  hooks.UserPromptSubmit = userPromptHooks;
+  console.log("traceback: added UserPromptSubmit warm-start command hook");
 
-  const repoPathValue = opts?.global ? "${cwd}" : repoRoot.replace(/\\/g, "/");
-
-  // UserPromptSubmit hook for traceback search_with_fallback
-  const userPromptMatcher = getOrCreateMatcher("UserPromptSubmit", "*");
-  if (!hookExists(userPromptMatcher.hooks, "search_with_fallback")) {
-    userPromptMatcher.hooks.push({
-      type: "mcp_tool",
-      server: "traceback",
-      tool: "search_with_fallback",
-      input: {
-        query: "${user_input}",
-        repo_path: repoPathValue,
-      },
-      statusMessage: "Warming up traceback context...",
-      async: true,
-      asyncRewake: true,
-    });
-    console.log("traceback: added UserPromptSubmit hook for search_with_fallback");
-  } else {
-    console.log("traceback: UserPromptSubmit hook for search_with_fallback already exists");
-  }
-
-  // PreToolUse hook for Read operations
-  const readMatcher = getOrCreateMatcher("PreToolUse", "Read");
-  if (!hookExists(readMatcher.hooks, "search_with_fallback")) {
-    readMatcher.hooks.push({
-      type: "mcp_tool",
-      server: "traceback",
-      tool: "search_with_fallback",
-      input: {
-        query: "${tool_input.file_path}",
-        repo_path: repoPathValue,
-      },
-      statusMessage: "Scoping search context...",
-      async: true,
-    });
-    console.log("traceback: added PreToolUse hook for Read operations");
-  } else {
-    console.log("traceback: PreToolUse hook for Read already exists");
-  }
-
-  // Write updated settings back
-  writeFileSync(claudeSettingsPath, `${JSON.stringify(settings, null, 2)}\n`, "utf-8");
+  writeFileSync(settingsPath, `${JSON.stringify(settings, null, 2)}\n`, "utf-8");
   console.log(
-    `traceback: configured Claude Code hooks in ~/.claude/settings.json - ` +
+    `traceback: configured Claude Code hooks in ${settingsPath} - ` +
       `traceback will now automatically warm context for all your coding sessions`,
   );
 }

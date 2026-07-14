@@ -70,7 +70,7 @@ export async function runWarmStart(opts: {
     if (opts.format === "plain") {
       return JSON.stringify({ error: "missing query" });
     }
-    if (opts.format === "vscode") {
+    if (opts.format === "vscode" || opts.format === "claude") {
       return wrapVsCodeResponse(normalizeVsCodeHookEventName(stdin.hook_event_name), "");
     }
     if (opts.format === "cursor-read") {
@@ -95,7 +95,7 @@ export async function runWarmStart(opts: {
   if (opts.format === "plain") {
     return JSON.stringify({ data: result, context }, null, 2);
   }
-  if (opts.format === "vscode") {
+  if (opts.format === "vscode" || opts.format === "claude") {
     return wrapVsCodeResponse(normalizeVsCodeHookEventName(stdin.hook_event_name), context);
   }
   if (opts.format === "cursor-read") {
@@ -115,12 +115,15 @@ async function main(): Promise<void> {
     const message = err instanceof Error ? err.message : String(err);
     if (format === "plain") {
       process.stdout.write(JSON.stringify({ error: message }));
-    } else if (format === "vscode") {
+    } else if (format === "vscode" || format === "claude") {
       process.stdout.write(wrapVsCodeResponse("UserPromptSubmit", `traceback warm-start failed: ${message}`));
     } else if (format === "cursor-read") {
       process.stdout.write(wrapCursorReadResponse(`traceback warm-start failed: ${message}`));
     }
-    process.exitCode = 1;
+    // Claude Code ignores stdout on non-zero exit and warns the user; degrade silently instead.
+    if (format !== "claude") {
+      process.exitCode = 1;
+    }
   }
 }
 

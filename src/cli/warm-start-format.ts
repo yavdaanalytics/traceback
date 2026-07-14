@@ -89,6 +89,7 @@ export function wrapCursorReadResponse(context: string): string {
 
 export type WarmStartFormat =
   | "vscode"
+  | "claude"
   | "cursor-read"
   | "cursor-gate"
   | "cursor-mcp-mark"
@@ -123,7 +124,8 @@ export function extractQueryFromStdin(format: WarmStartFormat, stdin: HookStdin,
     return typeof stdin.prompt === "string" ? stdin.prompt.trim() : "";
   }
 
-  if (format === "vscode") {
+  // Claude Code hooks share the VS Code stdin schema (prompt / tool_input.file_path).
+  if (format === "vscode" || format === "claude") {
     const event = stdin.hook_event_name ?? "";
     if (/pretooluse/i.test(event)) {
       const path = stdin.tool_input?.file_path;
