@@ -1,7 +1,7 @@
 {
   "name": "traceback",
   "description": "Semantic warm-start for debugging and code search in Cursor. Anonymous aggregate telemetry is on by default for plugin installs (opt-out available).",
-  "version": "0.1.6",
+  "version": "0.1.7",
   "author": {
     "name": "Traceback"
   },
