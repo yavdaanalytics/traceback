@@ -22,7 +22,7 @@ jobs:
           fetch-depth: 0
 
       - name: Setup Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           # Trusted publishing requires Node >= 22.14.0 and npm CLI >= 11.5.1.
           node-version: "22.14.0"
@@ -114,7 +114,7 @@ jobs:
           ref: ${{ github.event.repository.default_branch }}
 
       - name: Setup Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version: "22.14.0"
           cache: "npm"
