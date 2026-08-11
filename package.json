@@ -1,6 +1,6 @@
 {
   "name": "@yavdaanalytics/traceback",
-  "version": "0.1.7",
+  "version": "0.1.8",
   "description": "Semantic debugger MCP server: warm-starts grep/git with cosine-similarity recall over past coding-agent sessions",
   "license": "MIT",
   "type": "module",
@@ -62,7 +62,7 @@
   "dependencies": {
     "@lancedb/lancedb": "^0.13.0",
     "@modelcontextprotocol/sdk": "^1.0.4",
-    "fastembed": "^1.14.1",
+    "fastembed": "^2.1.0",
     "zod": "^4.0.0"
   },
   "devDependencies": {
