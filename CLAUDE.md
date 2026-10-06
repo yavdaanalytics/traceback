@@ -1,5 +1,23 @@
 # CLAUDE.md — traceback
 
+Follow the repository engineering rules in `AGENTS.md`.
+
+For non-trivial implementation work:
+
+User Story
+→ Acceptance Criteria
+→ Plan
+→ GitHub Sub-Issues
+→ Implementation
+→ Tests
+→ Verification
+→ Pull Request
+
+Do not declare work DONE unless the Definition of Done in `AGENTS.md`
+is satisfied.
+
+Load detailed documentation only when relevant to the current task.
+
 Semantic debugger MCP server: warm-starts grep/git with cosine-similarity recall
 over past coding-agent sessions, so an LLM agent scopes searches instead of
 grepping the whole repo blind.
@@ -20,6 +38,7 @@ When you change install/hooks: **`SETUP.md`** (not README).
 Open source does not hide implementation — layer docs for clarity, not secrecy.
 
 ## Stack (as it actually exists in this repo — do not add to this without checking package.json first)
+
 - **Runtime**: Node >=22.5.0, TypeScript, ESM (`"type": "module"`), compiled via `tsc` (`npm run build`).
 - **MCP transport**: `@modelcontextprotocol/sdk` (`McpServer` + `StdioServerTransport`), tools registered via `server.registerTool(name, {description, inputSchema: zod}, handler)`.
 - **Relational/graph storage**: Node's built-in `node:sqlite` (`DatabaseSync`) — chosen over `better-sqlite3` to avoid native-binary/build-toolchain friction on Windows. Schema lives in `src/storage/sqlite.ts` as a single `CREATE TABLE IF NOT EXISTS` string; new columns on existing tables need a guarded `PRAGMA table_info` + `ALTER TABLE` migration (`CREATE TABLE IF NOT EXISTS` alone won't add columns).
@@ -30,16 +49,19 @@ Open source does not hide implementation — layer docs for clarity, not secrecy
 - **Testing**: `vitest` (devDependency) — see Testing below for what's covered.
 
 ## Hard security rule
+
 Every git/grep shell-out **must** use `execFileSync(cmd, argvArray, {cwd, encoding})` —
 never a string-interpolated shell command. This prevents command injection since
 tool inputs (queries, patterns, refs) can come from LLM-generated arguments.
 
 ## Conventions
+
 - Business logic lives in its own `src/mcp/*.ts` module (e.g. `search.ts`, `lineage.ts`, `telemetry.ts`, `feedback.ts`); `src/mcp/index.ts` only wires `server.registerTool(...)` to those functions — no logic inline in the wiring file.
 - `src/storage/sqlite.ts`: typed row interfaces + hand-written prepared statements with `$named` params, plain exported `upsertX`/`getX` functions, `getDb(dbPath)` caches one connection per resolved path (a `Map`, not a single singleton) so a process can hold multiple repos' DBs open at once — used by `traceback-dashboard` to aggregate telemetry across repos (`src/dashboard/registry.ts` tracks known repos in `~/.traceback/repos.json`).
 - ESM imports of local compiled output on Windows require the `file://` URL scheme (bare `c:/...` paths throw `ERR_UNSUPPORTED_ESM_URL_SCHEME`).
 
 ## Testing
+
 Test runner: **Vitest** (`npm test` runs everything under `tests/`). Layout:
 - `tests/unit/` — `src/storage/sqlite.ts`, `src/mcp/telemetry.ts`, `src/mcp/feedback.ts` in isolation, each file against its own temp SQLite DB.
 - `tests/integration/` — real `fastembed` embeddings + real LanceDB search + SQLite penalty lookup together (`rank-with-penalty.test.ts`), against an isolated temp data dir — never the real `data/`.
@@ -56,29 +78,35 @@ Other checks:
 - No DAST — `traceback` is a local stdio MCP server with no network listener, so HTTP-facing DAST tooling (ZAP, etc.) doesn't apply.
 
 ## Out of scope / deliberately unwired
+
 - The "Episode" hierarchical session model is deferred, not v1.
 
 <!-- traceback-onboarding -->
+
 ## Traceback debugging (auto-installed)
 
 Use the **traceback** MCP server for semantic recall over past coding-agent sessions and scoped git/grep search.
 
 ### When to use
+
 - Debugging failures, regressions, or "why does this code exist?"
 - Before repo-wide grep/glob — warm-start narrows scope to relevant files and commits
 - Investigating patterns that repeat across sessions (use `submit_feedback` / `promote_pattern`)
 
 ### Host-first routing
+
 - Hosts with the installed traceback `SKILL.md` use balanced routing: strong/weak matches call traceback; skip only clearly non-code prompts.
 - **Claude Code** (deferred schema): call `get_traceback_status` first, then `search_with_fallback`.
 - **Cursor**: MCP config key is `traceback`; global installs use `user-traceback`. If routing fails, call `get_connection_info`.
 
 ### Mid-task trigger (not just the initiating prompt)
+
 - `SKILL.md` routing scores the prompt that starts a turn — it has no visibility into errors that surface later, inside tool results, mid-task.
 - The instant a tool result contains an HTTP 4xx/5xx, an exception, a stack trace, or a failed-test marker — before opening more files by hand — stop and call traceback with that exact error string/code.
 - Already several files deep into manual investigation is not a reason to skip this: sunk cost in reading code is not evidence traceback won't help.
 
 ### Debugging workflow
+
 1. `get_traceback_status` (Claude Code) or `get_connection_info` if the server id is unclear
 2. `search_with_fallback` with the user's question and this repo's git root as `repo_path`
 3. Narrow with `git_history_scope`, `search_sessions_grep`, `get_session_detail`, `blame_current`
@@ -86,6 +114,7 @@ Use the **traceback** MCP server for semantic recall over past coding-agent sess
 5. Record recurring mistakes via `submit_feedback` and `promote_pattern`
 
 ### Verify setup
+
 - Run `traceback-setup --doctor` to check MCP, hooks, and this onboarding block.
 - See [SETUP.md](SETUP.md) in this repo for full traceback configuration and troubleshooting.
 
